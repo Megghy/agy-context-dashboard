@@ -206,7 +206,7 @@ export class RuntimeUi {
     if (message.method === 'Runtime.executionContextDestroyed') { if(connection.contexts.has(p.executionContextId))connection.generation++;connection.contexts.delete(p.executionContextId);connection.contextCandidates.delete(p.executionContextId);return; }
     if (message.method !== 'Runtime.bindingCalled' || p.name !== this.binding || !connection.contexts.has(p.executionContextId)) return;
     if(!await this.owns()||connection.closed||connection.revoked||!connection.contexts.has(p.executionContextId))return;
-    if (typeof p.payload !== 'string' || p.payload.length > 4096 || connection.inflight >= 8) return;
+    if (typeof p.payload !== 'string' || p.payload.length > 16384 || connection.inflight >= 8) return;
     let input;
     try { input = JSON.parse(p.payload); if (!Number.isSafeInteger(input.id) || input.id < 1) return; } catch { return; }
     const generation=connection.generation;
@@ -221,7 +221,7 @@ export class RuntimeUi {
       }
       else if (input.type === 'preferences' && this.preferences) {
         const value=input.input;
-        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','quotaDisplay','usageScope','autoRelaunchDebug'].includes(key)))throw new Error('Invalid preferences request');
+        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','quotaDisplay','usageScope','autoRelaunchDebug','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preferences request');
         result=Object.keys(value).length?await this.preferences.set(value):await this.preferences.get();
       }
       else if (input.type === 'diagnostic' && ['boot', 'mounted', 'mount-error'].includes(input.input?.stage)) {

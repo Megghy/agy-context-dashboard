@@ -1,6 +1,7 @@
 import { percent, rate, count, elapsed, countdown, resetDate } from './format.mjs';
 import { createI18n } from './i18n.js';
 import { createTheme } from './theme.js';
+import { createContextLimit } from './context-limit.js';
 function initPanel(){
 if(!document.querySelector('.widget')||window.__agPulsePanelInstalled)return;
 window.__agPulsePanelInstalled=true;
@@ -38,6 +39,15 @@ let languagePicker=null;
 let preferences=connectPreferences();
 const speedStyle=language.connectSpeedStyle({initial:localGet('ag-pulse-speed-style'),cache:value=>localSet('ag-pulse-speed-style',value),write:preferenceRequest,
   changed:()=>{applySpeedStyle();localize();render();}});
+const contextLimitEngine=createContextLimit();
+const localJson=(key,fallback)=>{try{const raw=localGet(key);return raw?JSON.parse(raw):fallback;}catch{return fallback;}};
+let contextLimitControl=null;
+const contextLimit=language.connectContextLimit({
+  initial:localJson('ag-pulse-context-limit',null),
+  cache:value=>localSet('ag-pulse-context-limit',JSON.stringify(value)),
+  write:preferenceRequest,
+  changed:()=>{contextLimitControl?.update();},
+});
 function applySpeedStyle(){
   document.documentElement.dataset.speedStyle=speedStyle.style;
   $('speed-hero-icon')?.setAttribute('href',speedStyle.style==='cat'?'#gauge':'#pulse');
@@ -70,6 +80,7 @@ function localize(){
     button.setAttribute('aria-label',name);button.title=failed?`${name} · ${t('styleSaveFailed')}`:name;
     button.setAttribute('aria-pressed',String(speedStyle.style===value));button.dataset.saveFailed=String(failed);
   }
+  contextLimitControl?.update();
 }
 
 function chooseGroup(groups, speed, composerModel) {
@@ -316,6 +327,7 @@ function render() {
   $('context-fill').style.width=hasCapacity?`${Math.min(1,context.usedFraction)*100}%`:'0%';
   $('context-fill').style.background=hasCapacity&&context.usedFraction>=.9?'var(--pulse-danger)':hasCapacity&&context.usedFraction>=.75?'var(--pulse-warning)':'';
   if(hasCapacity){$('context-track').setAttribute('aria-valuenow',String(Math.min(100,context.usedFraction*100)));$('context-track').setAttribute('aria-valuemin','0');$('context-track').setAttribute('aria-valuemax','100');}else $('context-track').removeAttribute('aria-valuenow');
+  contextLimitControl?.update();
   text('strip-cache',percent(cache?.hitRate));text('cache-rate',percent(cache?.hitRate));
   const tokens=usage?.tokens || cache;
   // Coverage remains available in raw statistics and documented separately.
@@ -509,7 +521,7 @@ function refresh(force = false) {
     if (!['live','stale','offline'].includes(value.connection)) throw new Error(t('invalidData'));
     snapshot = value;
     if(Object.hasOwn(value,'theme'))themeController.setHostTheme(value.theme);
-    if(value.preferences){preferences.sync(value.preferences);speedStyle.sync(value.preferences);}
+    if(value.preferences){preferences.sync(value.preferences);speedStyle.sync(value.preferences);contextLimit.sync(value.preferences);}
     serverOffset = Date.parse(value.serverTime) - Date.now();
     if (!Number.isFinite(serverOffset)) serverOffset = 0;
     render();
@@ -526,9 +538,18 @@ function refresh(force = false) {
 $('quota-group').addEventListener('change', event => { selectedGroup = event.target.value === autoGroupId ? null : event.target.value; render(); });
 $('refresh-button').addEventListener('click', refreshManually);
 languagePicker=language.mountLanguagePicker({button:$('language-toggle'),parent:document.body,choose:value=>preferences.choose(value)});
+if($('context-limit-slot')){
+  contextLimitControl=contextLimitEngine.mountControl({
+    container:$('context-limit-slot'),
+    language,
+    controller:contextLimit,
+    getModels:()=>snapshot?.modelCatalog||[],
+    getActiveModel:()=>snapshot?.composerModel||snapshot?.speed?.context?.model||snapshot?.speed?.model||'',
+  });
+}
 for(const button of document.querySelectorAll('[data-speed-style-choice]'))button.addEventListener('click',()=>void speedStyle.choose(button.dataset.speedStyleChoice));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-window.addEventListener('pagehide',()=>{preferences.dispose();speedStyle.dispose();languagePicker.close(false);});
+window.addEventListener('pagehide',()=>{preferences.dispose();speedStyle.dispose();contextLimit.dispose();contextLimitControl?.dispose();languagePicker.close(false);});
 window.addEventListener('pageshow',event=>{if(event.persisted)preferences=connectPreferences();});
 setInterval(updateCountdowns,1000);
 applySpeedStyle();

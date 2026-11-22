@@ -13,12 +13,12 @@ export function panelAppSource(){
   return source.slice(index+prefix.length).trim().replace(/;$/,'');
  };
  let app=read('app.js');
- for(const line of ["import { percent, rate, count, elapsed, countdown, resetDate } from './format.mjs';","import { createI18n } from './i18n.js';","import { createTheme } from './theme.js';"]){
+ for(const line of ["import { percent, rate, count, elapsed, countdown, resetDate } from './format.mjs';","import { createI18n } from './i18n.js';","import { createTheme } from './theme.js';","import { createContextLimit } from './context-limit.js';"]){
   if(!app.includes(line))throw Error('Panel dependency list changed');app=app.replace(line,'');
  }
  const format=read('format.mjs').replace(/^export function /gm,'function ');
  if(/^\s*(?:import|export)\b/m.test(app+format))throw Error('Unsupported panel module dependency');
- return `(()=>{'use strict';\n${format}\nconst createI18n=(${factory('i18n')});\nconst createTheme=(${factory('theme')});\n${app}\n})();`;
+ return `(()=>{'use strict';\n${format}\nconst createI18n=(${factory('i18n')});\nconst createTheme=(${factory('theme')});\nconst createContextLimit=(${factory('context-limit')});\n${app}\n})();`;
 }
 
 function panelVersion(readManifest){

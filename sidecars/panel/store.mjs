@@ -34,6 +34,7 @@ export class MetricsStore {
   quota = null;
   quotaAt = 0;
   quotaPending = null;
+  modelCatalog = [];
   identity = null;
   serverPid = null;
   summaries = [];
@@ -79,8 +80,20 @@ export class MetricsStore {
       if (!this.owned() || epoch !== this.epoch) throw new Error('后台已重新连接，请等待刷新');
       const email = user.userStatus?.email;
       const identity = email ? createHash('sha256').update(email).digest('hex') : null;
-      if (identity !== this.identity) { this.background?.reset();this.delegated.reset();this.transcripts?.reset(); this.client.resetTrajectories?.(); this.quota = null; this.quotaAt = 0; this.sessions.clear(); this.summaries = []; this.summariesAt = 0;this.clearUsagePersistenceErrors(); }
+      if (identity !== this.identity) { this.background?.reset();this.delegated.reset();this.transcripts?.reset(); this.client.resetTrajectories?.(); this.quota = null; this.quotaAt = 0; this.modelCatalog = []; this.sessions.clear(); this.summaries = []; this.summariesAt = 0;this.clearUsagePersistenceErrors(); }
       this.identity = identity;
+      const rawModels = user.userStatus?.cascadeModelConfigData?.clientModelConfigs;
+      if (Array.isArray(rawModels)) {
+        const seen = new Set();
+        this.modelCatalog = rawModels.flatMap(entry => {
+          const id = typeof entry?.modelOrAlias?.model === 'string' ? entry.modelOrAlias.model.trim()
+            : typeof entry?.modelOrAlias?.alias === 'string' ? entry.modelOrAlias.alias.trim() : '';
+          const label = typeof entry?.label === 'string' ? entry.label.replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+          if (!id || !label || seen.has(id)) return [];
+          seen.add(id);
+          return [{ id: id.slice(0, 120), label }];
+        }).slice(0, 128);
+      }
       const response = await this.client.call('RetrieveUserQuotaSummary',force?{forceRefresh:true}:{});
       if (!this.owned() || epoch !== this.epoch || identity !== this.identity) throw new Error('后台已重新连接，请等待刷新');
       this.quota = quotaMetrics(response);
@@ -198,7 +211,7 @@ export class MetricsStore {
       const server = await this.client.discover();
       if (!this.owned()) throw new Error('后台已重新连接，请等待刷新');
       if (server.pid !== this.serverPid) {
-        this.epoch++; this.background?.reset();this.delegated.reset();this.transcripts?.reset(); this.quota = null; this.quotaAt = 0; this.sessions.clear(); this.identity = null; this.summaries = []; this.summariesAt = 0; this.serverPid = server.pid;this.clearUsagePersistenceErrors();
+        this.epoch++; this.background?.reset();this.delegated.reset();this.transcripts?.reset(); this.quota = null; this.quotaAt = 0; this.modelCatalog = []; this.sessions.clear(); this.identity = null; this.summaries = []; this.summariesAt = 0; this.serverPid = server.pid;this.clearUsagePersistenceErrors();
       }
       try { await this.refreshQuota(force || quotaRefresh); }
       catch (e) { connection = this.quota ? 'stale' : 'offline'; error = e.message; }
@@ -229,7 +242,7 @@ export class MetricsStore {
     return {
       connection, error, sessionError, collection, serverTime: new Date().toISOString(),
       quotaUpdatedAt: this.quotaAt ? new Date(this.quotaAt).toISOString() : null,
-      groups: this.quota || [], speed, conversations: this.summaries,
+      groups: this.quota || [], ...(this.modelCatalog.length ? { modelCatalog: this.modelCatalog } : {}), speed, conversations: this.summaries,
       persistenceError: this.persistenceError,
       source: 'Antigravity local API',
     };
