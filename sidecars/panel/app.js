@@ -545,6 +545,7 @@ if($('context-limit-slot')){
     controller:contextLimit,
     getModels:()=>snapshot?.modelCatalog||[],
     getActiveModel:()=>snapshot?.composerModel||snapshot?.speed?.context?.model||snapshot?.speed?.model||'',
+    isInterceptorActive:()=>!snapshot?.integration||snapshot.integration.state==='mounted',
   });
 }
 for(const button of document.querySelectorAll('[data-speed-style-choice]'))button.addEventListener('click',()=>void speedStyle.choose(button.dataset.speedStyleChoice));

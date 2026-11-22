@@ -62,7 +62,7 @@ const snapshot=async input=>{
       const server=await client.discover();
       if(server.pid!==store.serverPid){store.epoch++;store.background?.reset();store.delegated.reset();store.transcripts?.reset();store.identity=null;store.quota=null;store.quotaAt=0;store.sessions.clear();store.clearUsagePersistenceErrors();store.serverPid=server.pid;}
       await store.refreshQuota(input.force);
-      value={connection:'live',speed:null,groups:store.quota||[],quotaUpdatedAt:new Date(store.quotaAt).toISOString()};
+      value={connection:'live',speed:null,groups:store.quota||[],...(store.modelCatalog.length?{modelCatalog:store.modelCatalog}:{}),quotaUpdatedAt:new Date(store.quotaAt).toISOString()};
     }catch{value={connection:'offline',speed:null,groups:[],error:'IDE local API unavailable'};}
   }
   if(input.usageSync===true)void usage.sync(true);

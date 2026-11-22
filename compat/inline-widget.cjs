@@ -804,7 +804,7 @@ module.exports = function installAgPulseInlineWidget() {
   // the pointer departs. Only keyboard-visible focus keeps a card engaged.
   // The explicit first-use action moves focus into language choices. Keep
   // that guided destination available until the user chooses or leaves it.
-  const cardEngaged=()=>Boolean(root?.activeElement?.matches(':focus-visible')||root?.activeElement?.matches('input,select')||(guideOpened&&!guideDismissed&&cardName==='context'&&root?.activeElement?.matches('[data-language-choice]'))||node?.matches(':hover')||root?.querySelector('.card:not([hidden]):hover'));
+  const cardEngaged=()=>Boolean(root?.activeElement?.matches(':focus-visible')||root?.activeElement?.matches('input,select')||(cardName==='context'&&contextLimitControl?.isExpanded?.())||(guideOpened&&!guideDismissed&&cardName==='context'&&root?.activeElement?.matches('[data-language-choice]'))||node?.matches(':hover')||root?.querySelector('.card:not([hidden]):hover'));
   function cardVisibility(element,visible){
     if(visible){hidden(element,false);if(element.hasAttribute('popover')&&!element.matches(':popover-open'))element.showPopover();}
     else {if(element.hasAttribute('popover')&&element.matches(':popover-open'))element.hidePopover();hidden(element,true);}
@@ -1070,6 +1070,8 @@ module.exports = function installAgPulseInlineWidget() {
       .ctx-cap-apply:disabled{opacity:.5;cursor:not-allowed}
       .ctx-cap-error{margin:0;font-size:11px;line-height:1.4;color:var(--pulse-warning)}
       .ctx-cap-error[hidden]{display:none}
+      .ctx-cap-hint{margin:0;font-size:11px;line-height:1.4;color:var(--pulse-muted)}
+      .ctx-cap-hint[hidden]{display:none}
       .ctx-cap-overrides{display:flex;flex-wrap:wrap;gap:4px;padding-top:5px;border-top:1px solid var(--pulse-separator)}
       .ctx-cap-overrides[hidden]{display:none}
       .ctx-cap-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--pulse-separator);border-radius:5px;background:var(--pulse-card);overflow:hidden}

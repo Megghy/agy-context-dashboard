@@ -140,6 +140,8 @@ dl{margin:0}.stats-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr
 .ctx-cap-apply:disabled{opacity:.5;cursor:not-allowed}
 .ctx-cap-error{margin:0;font-size:11px;line-height:1.4;color:var(--pulse-warning)}
 .ctx-cap-error[hidden]{display:none}
+.ctx-cap-hint{margin:0;font-size:11px;line-height:1.4;color:var(--pulse-muted)}
+.ctx-cap-hint[hidden]{display:none}
 .ctx-cap-overrides{display:flex;flex-wrap:wrap;gap:4px;padding-top:5px;border-top:1px solid var(--pulse-separator)}
 .ctx-cap-overrides[hidden]{display:none}
 .ctx-cap-chip{display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--pulse-separator);border-radius:5px;background:var(--pulse-card);overflow:hidden}

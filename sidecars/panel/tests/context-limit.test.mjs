@@ -180,6 +180,46 @@ test('WebSocket and fetch transformers inject maxTokenLimit and clear conflictin
   assert.equal(fetchTx.modified, true);
   const decodedFetch = JSON.parse(new TextDecoder().decode(fetchTx.output));
   assert.equal(decodedFetch.cascadeConfig.checkpointConfig.maxTokenLimit, 256000);
+
+  // 4. Real Antigravity 2.34 gRPC-Web 5-byte envelope (application/grpc-web+json)
+  const grpcInner = new TextEncoder().encode(JSON.stringify({
+    cascadeId: 'c-3',
+    cascadeConfig: { plannerConfig: { planModel: 'MODEL_PLACEHOLDER_M532' } },
+  }));
+  const grpcEnvelope = new Uint8Array(5 + grpcInner.length);
+  grpcEnvelope[0] = 0;
+  new DataView(grpcEnvelope.buffer).setUint32(1, grpcInner.length, false);
+  grpcEnvelope.set(grpcInner, 5);
+  const grpcTx = engine.transformFetchBody(
+    'https://127.0.0.1:48922/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage',
+    grpcEnvelope,
+    'application/grpc-web+json',
+    policy,
+    CATALOG,
+  );
+  assert.equal(grpcTx.handled, true);
+  assert.equal(grpcTx.modified, true);
+  assert.ok(grpcTx.output instanceof Uint8Array);
+  assert.equal(grpcTx.output[0], 0);
+  const outLen = new DataView(grpcTx.output.buffer, grpcTx.output.byteOffset, grpcTx.output.byteLength).getUint32(1, false);
+  assert.equal(outLen, grpcTx.output.length - 5);
+  const decodedGrpc = JSON.parse(new TextDecoder().decode(grpcTx.output.subarray(5)));
+  assert.equal(decodedGrpc.cascadeConfig.checkpointConfig.maxTokenLimit, 320000);
+});
+
+test('canonicalizeModelName normalizes live Composer trigger text to catalog labels', () => {
+  const engine = createContextLimit();
+  assert.equal(engine.canonicalizeModelName('Select model, current: Gemini 4 Neon High', CATALOG), 'Gemini 4 Neon (High)');
+  assert.equal(engine.canonicalizeModelName('Gemini 4 Neon High', CATALOG), 'Gemini 4 Neon (High)');
+  assert.equal(engine.canonicalizeModelName('MODEL_PLACEHOLDER_M532', CATALOG), 'Gemini 4 Neon (High)');
+  // Fuzzy match still catches overrides saved without parentheses.
+  const eff = engine.resolveEffectiveLimit(
+    { globalLimit: 320000, overrides: { 'Gemini 4 Neon High': 256000 } },
+    'MODEL_PLACEHOLDER_M532',
+    CATALOG,
+  );
+  assert.equal(eff.tokens, 256000);
+  assert.equal(eff.source, 'override');
 });
 
 test('installInterceptor intercepts WebSocket and fetch and restores cleanly on dispose', async () => {
@@ -246,11 +286,18 @@ test('i18n connectContextLimit controller handles optimistic writes, stale polls
   controller.sync({ contextLimitTokens: 512000, revision: 1 });
   assert.equal(controller.value.globalLimit, 320000);
 
+  // Cross-window concurrent override persisted on backend is merged without false error.
+  stored.contextLimitOverrides = { 'Gemini 4 Neon (High)': 256000, 'Gemini 4 Argon (High)': 0 };
+  await controller.setGlobal(400000);
+  assert.equal(controller.error, false);
+  assert.equal(controller.value.globalLimit, 400000);
+  assert.deepEqual(controller.value.overrides, { 'Gemini 4 Neon (High)': 256000, 'Gemini 4 Argon (High)': 0 });
+
   // Failed save sets error flag without losing chosen state.
   fail = true;
   await controller.clearOverride('Gemini 4 Neon (High)');
   assert.equal(controller.error, true);
-  assert.deepEqual(controller.value.overrides, {});
+  assert.deepEqual(controller.value.overrides, { 'Gemini 4 Argon (High)': 0 });
 
   fail = false;
   await controller.resetAll();

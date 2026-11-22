@@ -88,12 +88,23 @@ module.exports = function createContextLimitEngine() {
     return `MODEL_PLACEHOLDER_M${n - 1000}`;
   }
 
+  function canonicalCompareKey(raw) {
+    return normalizeModelKey(raw)
+      .replace(/^(?:select\s+model\s*,?\s*current\s*:|current\s*:|model\s*:|选择模型\s*[:：]?|当前模型\s*[:：]?)\s*/i, '')
+      .toLowerCase()
+      .replace(/[()[\]{}]/g, ' ')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function resolveCatalogLabel(rawModel, catalog) {
     const list = Array.isArray(catalog) ? catalog : [];
     const rawStr = typeof rawModel === 'number' ? enumNumberToId(rawModel) : normalizeModelKey(String(rawModel || ''));
     if (!rawStr) return '';
     const lower = rawStr.toLowerCase();
     const withoutPrefix = lower.replace(/^model_/, '');
+    const fuzzy = canonicalCompareKey(rawStr);
     for (const entry of list) {
       const entryId = String(entry?.id || '').toLowerCase();
       const entryLabel = String(entry?.label || '').toLowerCase();
@@ -101,7 +112,21 @@ module.exports = function createContextLimitEngine() {
         return entry.label;
       }
     }
+    if (fuzzy) {
+      for (const entry of list) {
+        if (canonicalCompareKey(entry?.label || '') === fuzzy) return entry.label;
+      }
+    }
     return '';
+  }
+
+  function canonicalizeModelName(rawModel, catalog = []) {
+    const matched = resolveCatalogLabel(rawModel, catalog);
+    if (matched) return matched;
+    const cleaned = normalizeModelKey(String(rawModel || ''))
+      .replace(/^(?:select\s+model\s*,?\s*current\s*:|current\s*:|model\s*:|选择模型\s*[:：]?|当前模型\s*[:：]?)\s*/i, '')
+      .trim();
+    return cleaned;
   }
 
   function extractRequestModels(payload) {
@@ -146,11 +171,16 @@ module.exports = function createContextLimitEngine() {
       else if (typeof ref === 'string') addKey(ref);
     }
     const lowerIndex = new Map();
-    for (const [k, v] of Object.entries(policy.overrides)) lowerIndex.set(k.toLowerCase(), [k, v]);
+    const fuzzyIndex = new Map();
+    for (const [k, v] of Object.entries(policy.overrides)) {
+      lowerIndex.set(k.toLowerCase(), [k, v]);
+      const fk = canonicalCompareKey(k);
+      if (fk && !fuzzyIndex.has(fk)) fuzzyIndex.set(fk, [k, v]);
+    }
     for (const candidate of lookupKeys) {
       const hit = Object.hasOwn(policy.overrides, candidate)
         ? [candidate, policy.overrides[candidate]]
-        : lowerIndex.get(candidate.toLowerCase());
+        : (lowerIndex.get(candidate.toLowerCase()) || fuzzyIndex.get(canonicalCompareKey(candidate)));
       if (hit) {
         const [matchedKey, value] = hit;
         if (value === 0) return { tokens: null, source: 'override-default', matchedKey, resolvedModel: lookupKeys[0] || matchedKey };
@@ -211,6 +241,26 @@ module.exports = function createContextLimitEngine() {
     return { handled: true, modified: true, output: JSON.stringify(nextFrame), effective: result.effective };
   }
 
+  function unpackFramedBytes(bytes) {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 5) return null;
+    const flags = bytes[0];
+    if (flags !== 0) return null; // Skip compressed frames safely.
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const len = view.getUint32(1, false);
+    if (len <= 0 || 5 + len !== bytes.length) return null;
+    const inner = bytes.subarray(5, 5 + len);
+    if (inner[0] !== 0x7b) return null; // Not a JSON object payload.
+    return { flags, inner };
+  }
+
+  function packFramedBytes(flags, jsonBytes) {
+    const out = new Uint8Array(5 + jsonBytes.length);
+    out[0] = flags;
+    new DataView(out.buffer, out.byteOffset, out.byteLength).setUint32(1, jsonBytes.length, false);
+    out.set(jsonBytes, 5);
+    return out;
+  }
+
   function transformFetchBody(url, body, contentType, policyInput, catalog = []) {
     if (!String(url || '').includes('SendUserCascadeMessage')) {
       return { handled: false, modified: false, output: body };
@@ -218,14 +268,25 @@ module.exports = function createContextLimitEngine() {
     if (contentType && !/json/i.test(String(contentType))) {
       return { handled: false, modified: false, output: body };
     }
-    let text = null, binaryType = null;
-    if (typeof body === 'string') text = body;
-    else if (body instanceof Uint8Array || ArrayBuffer.isView(body)) {
-      binaryType = 'uint8';
-      try { text = new TextDecoder().decode(new Uint8Array(body.buffer, body.byteOffset, body.byteLength)); } catch { return { handled: false, modified: false, output: body }; }
-    } else if (body instanceof ArrayBuffer) {
-      binaryType = 'arraybuffer';
-      try { text = new TextDecoder().decode(new Uint8Array(body)); } catch { return { handled: false, modified: false, output: body }; }
+    let text = null, binaryType = null, framedFlags = null;
+    if (typeof body === 'string') {
+      text = body;
+    } else if (body instanceof Uint8Array || ArrayBuffer.isView(body) || body instanceof ArrayBuffer) {
+      const bytes = body instanceof ArrayBuffer
+        ? new Uint8Array(body)
+        : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+      binaryType = body instanceof ArrayBuffer ? 'arraybuffer' : 'uint8';
+      const framed = unpackFramedBytes(bytes);
+      try {
+        if (framed) {
+          framedFlags = framed.flags;
+          text = new TextDecoder().decode(framed.inner);
+        } else {
+          text = new TextDecoder().decode(bytes);
+        }
+      } catch {
+        return { handled: false, modified: false, output: body };
+      }
     } else {
       return { handled: false, modified: false, output: body };
     }
@@ -235,8 +296,16 @@ module.exports = function createContextLimitEngine() {
     const result = transformSendPayload(payloadObj, policyInput, catalog);
     if (!result.modified) return { handled: true, modified: false, output: body, effective: result.effective };
     const serialized = JSON.stringify(result.payload);
-    if (binaryType === 'uint8') return { handled: true, modified: true, output: new TextEncoder().encode(serialized), effective: result.effective };
-    if (binaryType === 'arraybuffer') return { handled: true, modified: true, output: new TextEncoder().encode(serialized).buffer, effective: result.effective };
+    if (binaryType) {
+      const encoded = new TextEncoder().encode(serialized);
+      const bytesOut = framedFlags !== null ? packFramedBytes(framedFlags, encoded) : encoded;
+      return {
+        handled: true,
+        modified: true,
+        output: binaryType === 'arraybuffer' ? bytesOut.buffer : bytesOut,
+        effective: result.effective,
+      };
+    }
     return { handled: true, modified: true, output: serialized, effective: result.effective };
   }
 
@@ -310,7 +379,7 @@ module.exports = function createContextLimitEngine() {
     };
   }
 
-  function mountControl({ container, language, controller, getModels = () => [], getActiveModel = () => '', onLayout = () => {} }) {
+  function mountControl({ container, language, controller, getModels = () => [], getActiveModel = () => '', isInterceptorActive = () => true, onLayout = () => {} }) {
     const doc = container.ownerDocument;
     const SVG_NS = 'http://www.w3.org/2000/svg';
     let expanded = false, scope = 'global', selectedModel = '', validationError = '', disposed = false;
@@ -372,17 +441,20 @@ module.exports = function createContextLimitEngine() {
     const errEl = el('p', 'ctx-cap-error');
     errEl.hidden = true;
 
+    const hintEl = el('p', 'ctx-cap-hint');
+    hintEl.hidden = true;
+
     const overridesWrap = el('div', 'ctx-cap-overrides');
     overridesWrap.hidden = true;
 
-    body.append(scopeRow, modelRow, presetsRow, customRow, errEl, overridesWrap);
+    body.append(scopeRow, modelRow, presetsRow, customRow, errEl, hintEl, overridesWrap);
     wrap.append(head, body);
     container.append(wrap);
 
     const availableModels = () => {
       const policy = normalizePolicy(controller.value);
-      const active = normalizeModelKey(getActiveModel?.() || '');
       const catalog = normalizeCatalog(getModels?.() || []);
+      const active = canonicalizeModelName(getActiveModel?.() || '', catalog);
       const list = [], seen = new Set();
       const push = name => {
         const key = normalizeModelKey(name);
@@ -480,7 +552,8 @@ module.exports = function createContextLimitEngine() {
       modelRow.hidden = scope !== 'model';
 
       const modelsSig = JSON.stringify([list, language.language]);
-      if (modelsSig !== lastModelsSig) {
+      const selectFocused = doc.activeElement === modelSelect || container.getRootNode?.()?.activeElement === modelSelect;
+      if (modelsSig !== lastModelsSig && !selectFocused) {
         lastModelsSig = modelsSig;
         if (list.length) {
           modelSelect.replaceChildren(...list.map(name => new Option(name, name)));
@@ -492,7 +565,7 @@ module.exports = function createContextLimitEngine() {
           modelSelect.disabled = true;
         }
       }
-      if (targetModel && modelSelect.value !== targetModel) modelSelect.value = targetModel;
+      if (targetModel && !selectFocused && modelSelect.value !== targetModel) modelSelect.value = targetModel;
 
       const activeOverrideVal = scope === 'model' && targetModel && Object.hasOwn(policy.overrides, targetModel)
         ? policy.overrides[targetModel] : undefined;
@@ -533,6 +606,10 @@ module.exports = function createContextLimitEngine() {
       errEl.hidden = !errKey;
       if (errKey && errEl.textContent !== t(errKey)) errEl.textContent = t(errKey);
 
+      const inactive = isInterceptorActive?.() === false;
+      hintEl.hidden = !inactive;
+      if (inactive && hintEl.textContent !== t('contextCapInactiveHint')) hintEl.textContent = t('contextCapInactiveHint');
+
       const overrideEntries = Object.entries(policy.overrides);
       overridesWrap.hidden = !overrideEntries.length;
       const overridesSig = JSON.stringify([overrideEntries, language.language]);
@@ -556,6 +633,7 @@ module.exports = function createContextLimitEngine() {
           removeBtn.title = t('contextCapRemoveOverride', { model: modelKey });
           removeBtn.addEventListener('click', () => {
             validationError = '';
+            if (selectedModel === modelKey) selectedModel = '';
             void controller.clearOverride(modelKey);
             update();
             onLayout();
@@ -597,6 +675,7 @@ module.exports = function createContextLimitEngine() {
     formatLimitShort,
     normalizePolicy,
     normalizeCatalog,
+    canonicalizeModelName,
     resolveCatalogLabel,
     extractRequestModels,
     resolveEffectiveLimit,
