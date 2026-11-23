@@ -125,3 +125,18 @@ test('all-local scope aggregates across accounts + unauthenticated sessions and 
   const unauthAcct=await tracker.snapshot({sync:false,scope:'account',groups});
   assert.equal(unauthAcct.accountAvailable,false);assert.equal(unauthAcct.totalTokens,0);
 });
+
+test('non-allowlisted providers with complete numeric counters are not marked partial',async t=>{
+  const ledger=await fixture(t);
+  const customRaw=raw({model:'gpt-6.1-sol',usage:{apiProvider:'API_PROVIDER_CUSTOM',responseId:'custom-1',inputTokens:'932',cacheReadTokens:'41600',cacheWriteTokens:'0',outputTokens:'47'}});
+  const rows=usageRecords(customRaw,id);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].partial,false);
+  await ledger.ingest(account,id,customRaw);
+  const summary=await ledger.summary(account,Date.parse('2026-10-11T02:00:00Z'));
+  assert.equal(summary.partialRequests,0);
+  assert.equal(summary.totalTokens,42579);
+  await ledger.ingest(account,id,raw({usage:{responseId:'missing-out',outputTokens:'invalid'}}));
+  const merged=await ledger.summary(account,Date.parse('2026-10-11T02:00:00Z'));
+  assert.equal(merged.partialRequests,1);
+});

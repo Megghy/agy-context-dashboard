@@ -27,16 +27,18 @@ store.onTrajectory=async(scope,id,raw,options={})=>{
 };
 store.onBackgroundResult=(scope,id,file,options)=>usage.ingestDisk(scope,id,file,options);
 const preferences=new PreferencesStore({file:join(data,'preferences.json')});
-const files=await Promise.all(['compat/i18n.cjs','compat/inline-widget.cjs','compat/theme.cjs','ide/surface.cjs','compat/usage-ui.cjs','compat/context-limit.cjs'].map(f=>readFile(join(root,f),'utf8')));
+const files=await Promise.all(['compat/i18n.cjs','compat/inline-widget.cjs','compat/theme.cjs','ide/surface.cjs','compat/usage-ui.cjs','compat/host-i18n.cjs','compat/host-i18n-dict.json','compat/context-limit.cjs'].map(f=>readFile(join(root,f),'utf8')));
 const extract=s=>s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'');
 if(!await ownership.claim())process.exit(0);
 const usageSource=`window.__agPulseUsageFactory=(${extract(files[4])});`;
-const contextLimitSource=`window.__agPulseContextLimitFactory=(${extract(files[5])});`;
+let hostI18nDict={};try{hostI18nDict=JSON.parse(files[6].replace(/^\uFEFF/,''));}catch{}
+const hostI18nSource=`window.__agPulseHostI18nDict=${JSON.stringify(hostI18nDict)};window.__agPulseHostI18nFactory=(${extract(files[5])});`;
+const contextLimitSource=`window.__agPulseContextLimitFactory=(${extract(files[7])});`;
 const owner=ownership.token;
 const adapter=`window.__agPulseSurface=(${extract(files[3])})();`;
-const source=makeRendererSource(...files.slice(0,3),owner,ownership.startedAt,adapter+usageSource+contextLimitSource);
+const source=makeRendererSource(...files.slice(0,3),owner,ownership.startedAt,adapter+usageSource+hostI18nSource+contextLimitSource);
 const webviewAdapter=`window.__agPulseSurface=(${extract(files[3])})({webview:true});`;
-const webviewSource=makeRendererSource(...files.slice(0,3),owner,ownership.startedAt,webviewAdapter+usageSource+contextLimitSource,{allowNested:true});
+const webviewSource=makeRendererSource(...files.slice(0,3),owner,ownership.startedAt,webviewAdapter+usageSource+hostI18nSource+contextLimitSource,{allowNested:true});
 // Each workbench has its own bridge request ID and DOM conversation ID. Empty
 // composers request account quota only; no most-recent-conversation fallback.
 const snapshot=async input=>{
@@ -48,7 +50,7 @@ const snapshot=async input=>{
     if(!store.serverPid&&!store.identity){
       try{
         const server=await client.discover();
-        if(server.pid!==store.serverPid){store.epoch++;store.background?.reset();store.delegated.reset();store.transcripts?.reset();store.identity=null;store.quota=null;store.quotaAt=0;store.sessions.clear();store.clearUsagePersistenceErrors();store.serverPid=server.pid;}
+        if(server.pid!==store.serverPid){store.epoch++;store.background?.reset();store.delegated.reset();store.transcripts?.reset();store.identity=null;store.quota=null;store.quotaAt=0;store.tokenBase=null;store.tokenBaseAt=0;store.tokenBaseFailedAt=0;store.sessions.clear();store.clearUsagePersistenceErrors();store.serverPid=server.pid;}
         await store.refreshQuota(false);
       }catch{}
     }
@@ -60,7 +62,7 @@ const snapshot=async input=>{
   else{
     try{
       const server=await client.discover();
-      if(server.pid!==store.serverPid){store.epoch++;store.background?.reset();store.delegated.reset();store.transcripts?.reset();store.identity=null;store.quota=null;store.quotaAt=0;store.sessions.clear();store.clearUsagePersistenceErrors();store.serverPid=server.pid;}
+      if(server.pid!==store.serverPid){store.epoch++;store.background?.reset();store.delegated.reset();store.transcripts?.reset();store.identity=null;store.quota=null;store.quotaAt=0;store.tokenBase=null;store.tokenBaseAt=0;store.tokenBaseFailedAt=0;store.sessions.clear();store.clearUsagePersistenceErrors();store.serverPid=server.pid;}
       await store.refreshQuota(input.force);
       value={connection:'live',speed:null,groups:store.quota||[],...(store.modelCatalog.length?{modelCatalog:store.modelCatalog}:{}),quotaUpdatedAt:new Date(store.quotaAt).toISOString()};
     }catch{value={connection:'offline',speed:null,groups:[],error:'IDE local API unavailable'};}

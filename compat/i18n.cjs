@@ -14,30 +14,50 @@ module.exports = function createDashboardI18n(initialLanguage) {
       taskOwn:'Current agent',taskSubagents:'Subagents ({n})',taskLoading:'Summing subagents…',taskPartial:'Some subagents unavailable',taskCurrentOnly:'Current agent only; subagent statistics unavailable.',
       transcriptTitle:'Recorded text estimate',transcriptUser:'User text',transcriptAssistant:'Replies + thinking',transcriptTool:'Tool output',transcriptSystem:'System text',transcriptMarkers:'Compaction markers',transcriptImages:'Image-generation steps',transcriptPartial:'partial',transcriptLoading:'Loading…',transcriptUnavailable:'Unavailable',transcriptSaved:'saved',transcriptBasis:'Estimated logged text, not active context or billed usage. Hidden prompts, media and tool-call arguments are excluded.',
       contextHostLimit:'Active window (host)',contextProviderCapacity:'Provider capacity reference',contextCompressionLimit:'Compaction threshold',contextLimitUnknown:'Unknown',contextReferenceBasis:'Provider specification; not this session\'s available capacity.',
-      contextCompactions:'Compactions',contextCompactionCount:'{n}×',contextCompactionsTitle:'Context compactions recorded in this conversation: {n}',
+      contextCompactions:'Compactions',contextCompactionCount:'{n}× compacted',contextCompactionSummary:'{n}× compacted',contextCompactionsTitle:'Context compactions recorded in this conversation: {n}',
       context:'Context window',contextShort:'Ctx',contextUsed:'{used}% used',contextTokens:'{used} / {max} toks',contextUnknown:'Context capacity unavailable',contextUnavailable:'Context statistics are unavailable for this request.',contextBasis:'Host estimate at the latest request start; not cumulative tokens or a live streaming counter.',contextModel:'Sampled model',contextLimit:'Window capacity',contextUsage:'Used tokens (estimate)',contextSaved:'Showing saved context statistics ({time}).',contextExceeded:'The host estimate exceeds the reported capacity.',
+      compositionTitle:'Context composition',compositionCustomization:'Customized injection',compositionCustomizationValue:'Injection {tokens}',compositionUser:'User messages',compositionThinking:'Assistant thinking',compositionReply:'Assistant replies',compositionAssistant:'Assistant (thinking + replies)',compositionTool:'Tool results',compositionSystem:'System text',compositionOther:'Other context',compositionRemaining:'Remaining space',compositionSourceSteps:'per-step usage buckets',compositionSourceTranscript:'logged text estimate',compositionSourceHybrid:'steps + logged text',compositionSourceHost:'host 8-category breakdown',compositionBasis:'Dynamic segments are estimates scaled to the host-reported used tokens ({source}); the injection total is exact from the host token base.',
+      compositionSystemPrompt:'System prompt',compositionMcpTools:'MCP tools',compositionSubagents:'Subagents',compositionSkills:'Skills',compositionPlugins:'Plugins',compositionRules:'Rules',compositionTools:'Tools',compositionChatMessages:'Chat messages',
+      compositionViewList:'List',compositionViewBar:'Bar',compositionViewToggle:'Composition view',compositionGroupRules:'Rules',compositionGroupSkills:'Skills',compositionGroupSubagents:'Subagents',compositionGroupMcpTools:'MCP tools',compositionExactTag:'exact',compositionEstimateTag:'estimate',compositionWindowShare:'{pct}% of window',avgCacheHitRate:'Avg cache hit rate',
+      tokenBaseDrilldown:'Customization drilldown',tokenBaseCustomBudget:'Custom budget',tokenBaseRulesBudget:'Rules budget',tokenBaseEmpty:'No customization entries reported.',
+      trendTitle:'Context trend',trendBasis:'Per-request input tokens (uncached + cache read + cache write); dashed lines mark compaction/checkpoint events.',trendSample:'{n} requests',trendCompaction:'Compaction',trendCheckpoint:'Checkpoint',trendModeToggle:'Trend mode',trendModeTotal:'Total',trendModeDelta:'Delta',trendReclaimed:'-{tokens} reclaimed',
+      panelViewSwitch:'Panel view',panelViewSession:'Session',panelViewActivity:'Daily/Weekly',panelViewModels:'By model',panelViewInsights:'Insights',panelResetSession:'Return to active session',
+      usageToday:'Today',usageMonth:'This month',usageViewActivity:'Daily/Weekly',usageViewModels:'By model',
+      auditButton:'Audit',auditTitle:'Session audit',auditTabFiles:'Files',auditTabCommands:'Commands',auditTabSteps:'Steps',auditLoading:'Loading session audit…',auditUnavailable:'Session audit unavailable.',auditEmptyFiles:'No file activity recorded.',auditEmptyCommands:'No command executions recorded.',auditEmptySteps:'No steps recorded.',
+      auditFilterAll:'All',auditFilterThinking:'Thinking',auditFilterTools:'Tools',auditFilterAnswer:'Answer',auditFilterUser:'User',
+      auditOpRead:'Read',auditOpEdit:'Edit',auditOpWrite:'Write',auditOpSearch:'Search',auditStepRef:'Step #{n}',auditExitCode:'exit {code}',auditRunning:'running',
+      creditsLabel:'Credits',creditsPrompt:'Prompt credits',creditsFlow:'Flow credits',creditsBadge:'{prompt}P · {flow}F',estimatedCostLabel:'Estimated cost',estimatedBadge:'Estimated',estimatedCostTitle:'Approximate public pricing estimate; not an official invoice.',
+      insightsAll:'All',insightsActive:'Active',insightsArchived:'Archived',insightsSortRecent:'Recent',insightsSortTokens:'Total tokens',insightsSortContext:'Context size',insightsSortCost:'Estimated cost',insightsSearchPlaceholder:'Filter sessions…',insightsScan:'Rescan',insightsScanning:'Scanning local sessions…',
+      insightsKpiSessions:'Sessions',insightsKpiSessionsSub:'{active} active · {archived} archived',insightsKpiTokens:'Total tokens',insightsKpiRoundsSub:'{n} turns',insightsKpiCost:'Est. cost',insightsKpiPricedSub:'priced {priced}/{total}',insightsKpiCache:'Cache hit',insightsKpiTools:'Tool calls',insightsKpiDuration:'Active time',insightsKpiCallsSub:'{n} model calls',
+      insights7dTitle:'Last 7 days',insightsHeatmapTitle:'Activity heatmap',insightsHeatmapSessions:'Sessions',insightsHeatmapTokens:'Tokens',insightsCompTitle:'Token composition',insightsProjects:'Projects',insightsSkills:'Skills loaded',insightsTools:'Tools invoked',insightsCommands:'Commands run',insightsSessionsTitle:'Sessions ({n})',insightsEmpty:'No local sessions found.',insightsCacheMeta:'{total} sessions · {ms}ms',
       savedStats:'Showing saved conversation statistics ({time}).',saveFailed:'Statistics could not be saved locally.',
       strip:'Antigrative Dashboard statistics',session:'Session statistics',cache:'Cache hit',cacheTitle:'Token usage',five:'Five-hour quota',week:'Weekly quota',weekShort:'Wk',
-      modelTime:'Model time',toolTime:'Tool time',ttft:'Average TTFT',ttftShort:'TTFT',latestSpeed:'Latest speed',sessionAvg:'Session avg',peakSpeed:'Peak',basisShortResponse:'Response',basisShortAll:'Output',sessionTps:'Session TPS',latest:'Last request',tokens:'Response / thinking',remaining:'remaining',
+      modelTime:'Model time',toolTime:'Tool time',ttft:'Session P50 TTFT',ttftShort:'TTFT (P50 / Last)',ttftBasis:'TTFT (first streamed/thinking token, not first answer token) · Session P50: {p50} · Latest: {latest}',latestSpeed:'Latest decode',latestSpeedTip:'Streaming decode speed of the latest qualified request (total output including thinking ÷ streaming time; excludes < 1s or < 30 output token short windows).',sessionAvg:'Session decode',e2eSpeed:'E2E speed',e2eShort:'E2E',e2eBasis:'End-to-end effective speed: total output tokens ÷ (TTFT + streaming time) across qualified requests.',peakSpeed:'Peak decode',peakBasis:'Peak streaming decode speed across qualified requests (excludes < 1s or < 30 output token bursts).',basisShortResponse:'Response only',basisShortAll:'Output + thinking',sessionTps:'Session decode TPS',latest:'Last request',tokens:'Response / thinking',remaining:'remaining',
       resetIn:'Resets in',resetTime:'Reset time (UTC+8)',group:'Quota group',selectGroup:'Select quota group',refresh:'Refresh quota',refreshStats:'Refresh statistics',refreshing:'Refreshing…',
       speedStyle:'Speed card style',styleMinimal:'Minimal',styleCat:'Pixel cat',styleSaveFailed:'Style could not be saved. Try again.',outlookOk:'Comfortable',outlookTight:'Tight',outlookExhaust:'Runs out early',paceIdle:'Unused',forecastLeft:'~{pct} left at reset',forecastDepletes:'Runs out in ~{eta}, {early} before reset',forecastWarming:'Used {pct} · warming up',forecastBasis:'{remaining} quota left · {time} of the window left · linear projection from this window\'s average usage',
       waiting:'Waiting for refresh',connecting:'Connecting to Antigravity…',waitingApp:'Waiting for Antigravity',waitingModel:'Waiting for a model request',waitingRequest:'No requests yet',
       hover:'Hover over the strip for details',autoConnect:'Open the app to connect automatically',loadingQuota:'Loading quota…',unavailableQuota:'Quota unavailable',
       live:'Connected to Antigrative Dashboard',stale:'Showing last available quota',offline:'Antigrative Dashboard is offline',
-      responseBasis:'Calculation: response tokens ÷ streaming time; session TPS is time-weighted.',allBasis:'Calculation: output tokens ÷ streaming time; response and thinking are not separated.',
-      missingTime:'{n} requests lack timing and are excluded from TPS.',shortSample:'Last request is under 1s; its rate may vary substantially.',running:'Generating; showing completed requests.',
+      responseBasis:'Streaming decode speed: response tokens ÷ streaming time (output total unavailable); session TPS is time-weighted.',allBasis:'Streaming decode speed: total output tokens (including thinking) ÷ streaming time; session TPS is token-weighted.',
+      missingTime:'{n} requests lack timing and are excluded from TPS.',shortSample:'Last request is excluded (< 1s or < 30 output tokens); its rate is quarantined.',running:'Generating; showing completed requests.',
       timingUnreliable:'Timing uncertain',ratePending:'Awaiting recalculation',excludedTime:'{n} requests with uncertain timing are excluded from TPS.',rateWarning:'Another {n} short or unusually fast samples remain included in TPS; their rates may fluctuate.',rateWarningOnly:'{n} short or unusually fast samples remain included in TPS; their rates may fluctuate.',rateReasons:'Reason: {reasons}.',rateReasonCount:'{reason}: {n} requests',rateUsageRetained:'Token and cache usage is still retained in full.',legacyRate:'Saved TPS uses the old calculation. Reopen this conversation while connected to recalculate.',
-      reasonToken:'Token scope mismatch',reasonDuplicate:'Conflicting request records',reasonRetry:'Retry/token timing scope uncertain',reasonTool:'Short tool-only timing window',reasonOutlier:'Short sample far above same-model baseline',reasonNonfinite:'Invalid calculated rate',
+      reasonToken:'Token scope mismatch',reasonDuplicate:'Conflicting request records',reasonRetry:'Retry/token timing scope uncertain',reasonTool:'Short tool-only timing window',reasonOutlier:'Short sample far above same-model baseline',reasonShortWindow:'Short window or low output (< 1s or < 30 output tokens)',reasonNonfinite:'Invalid calculated rate',
       sample:'{rounds} turns · {steps} steps · {requests} samples',sampleCount:'{n} samples',rounds:'{rounds} turns {steps} steps ·',
       noQuota:'This account did not return this quota window.',disabledQuota:'This quota window is disabled.',noFraction:'The account did not return a remaining fraction.',
       sharedQuota:'Models in this group share quota.',quotaSource:'Balances and reset times come from the account API.',updated:'Updated {time}',health:'Quota updated {time} · actual request metrics',firstUpdate:'Waiting for the first update',
-      cacheRate:'Cache hit',cacheRead:'Cache read',cacheInput:'Total input',cacheMiss:'Uncached input',cacheWrite:'Cache write',cacheOutput:'Output',
+      cacheRate:'Cache hit',cacheHitRateColon:'Cache hit rate:',cacheRead:'Cache read',cacheInput:'Total input',cacheMiss:'Uncached input',cacheWrite:'Cache write',cacheOutput:'Output',
       cacheBasis:'Cached input ÷ total input, weighted across requests. Cache writes are not hits.',cacheMissing:'{n} requests have unavailable cache statistics.',cacheUnavailable:'Cache statistics are unavailable for this conversation.',
       cacheCoverage:'{measured} of {total} requests',language:'Language',switchLanguage:'Switch to Chinese',languageSaveFailed:'Language preference could not be saved. Please retry.',checkUpdate:'Check for updates',reconnecting:'Waiting to reconnect',panelUnavailable:'The statistics panel cannot connect right now.',invalidData:'Incompatible statistics data',
       usageScopeLocal:'All local',usageScopeAccount:'Current account',quotaWindowUsage:'Window tokens',quotaWindowFullRef:'~{full} full',quotaWindowBasis:'Recorded local tokens for this account in this quota window; estimated full capacity is a proportional reference only (weighting varies by model and cache).',
       quotaRingTitle:'Remaining quota',quotaRingUnknown:'Balance unknown',quotaDisplay:'Quota display',quotaDisplayBoth:'Two numbers',quotaDisplayAuto:'Auto',quotaDisplayCompact:'Dot',quotaDisplaySaveFailed:'Display setting could not be saved. Try again.',
       inlineReconnecting:'Inline widget is reconnecting automatically; statistics remain available in this panel.',panelInlineReconnecting:'Inline widget is reconnecting automatically; statistics remain available in this panel.',panelDebugPortReady:'Host started without remote debugging (launch shortcut configured); fully quit and reopen Antigravity for the inline bar. Statistics remain available here.',panelDebugPortManual:'Antigravity 2.33+ requires --remote-debugging-port=0 --remote-debugging-address=127.0.0.1 (or python3 manage.py launch) for the inline bar; statistics remain available here.',missingDebugPort:'Antigravity started without a debug port. Relaunch to restore the inline status bar.',relaunchDebugButton:'Relaunch with Debug Port',relaunchingDebug:'Relaunching Antigravity…',relaunchDebugFailed:'Could not relaunch automatically. Use the Antigravity (Debug) launcher.',relaunchDebugCooldown:'Relaunch already requested; waiting for Antigravity to restart.',relaunchDebugNotRunning:'Antigravity is not running right now.',autoRelaunchLabel:'Auto-relaunch when debug port is missing (e.g. after app update)',autoRelaunchSaveFailed:'Auto-relaunch setting could not be saved.',
       contextCap:'Context cap',contextCapDefault:'Default',contextCapHostDefault:'Host default',contextCapFollowGlobal:'Follow global',contextCapScopeGlobal:'Global',contextCapScopeModel:'Model override',contextCapGlobalBadge:'Global {limit}',contextCapOverrideBadge:'Override {limit}',contextCapOverrideDefaultBadge:'Override · default',contextCapApply:'Apply',contextCapPlaceholder:'e.g. 320K',contextCapInvalid:'Enter 16K–2M (e.g. 320K or 320000).',contextCapSaveFailed:'Context cap could not be saved. Try again.',contextCapNoModel:'Select a model first.',contextCapRemoveOverride:'Remove override for {model}',contextCapOverridesHeading:'Overrides',contextCapInactiveHint:'Saved, but requires the inline status bar attached to apply on new messages.',
+      poolGemini:'Gemini',pool3p:'Claude / 3p',poolLocal:'Local / BYOM',poolOther:'Other',poolRollup:'Quota pools',
+      multiAgentDetails:'Multi-agent & model breakdown',sessionRoleLabel:'Agent role',roleCoordinator:'Coordinator',roleWorker:'Worker',roleMonitor:'Monitor',roleSidecar:'Scheduled sidecar',
+      orchestrationOverhead:'Orchestration',workerExecution:'Workers',cacheMissSurge:'{n} cache-miss surge ({tokens})',
+      contextBreakdown:'Context & tool breakdown',breakdownUser:'User',breakdownReply:'Reply',breakdownThinking:'Thinking',breakdownTools:'Tool results',breakdownToolCalls:'Tool args',breakdownSystem:'System',
+      topTools:'Heavy tool calls',bloatBadge:'{n} bloat',bloatWarningLine:'{tool} #{step}: {tokens}',bloatHint:'Single payload >= 20K (critical >= 50K)',
+      hostUiLocalization:'Host UI Chinese',hostUiLocalizationHint:'Translate Antigravity desktop UI labels into Simplified Chinese (restart-free)',hostUiLocalizationOn:'On',hostUiLocalizationOff:'Off',hostUiLocalizationSaveFailed:'Host localization setting could not be saved. Try again.',hostUiLocalizationEnableAction:'Enable Host UI Chinese',hostUiLocalizationDisableAction:'Disable Host UI Chinese',
     },
     'zh-CN':{
       collectionBackgroundFailed:'后台暂时无法完成，稍后会自动重试。',collectionProcessing:'正在补全统计',collectionProcessingReason:'后台处理中，可继续使用。',collectionProgress:'查看进度',collectionProgressCounts:'已处理 {steps} 个步骤 · {requests} 条请求记录',collectionQueued:'等待处理',collectionSteps:'读取步骤',collectionGenerators:'读取请求记录',collectionReducing:'计算统计',collectionPublishing:'保存已校验统计',
@@ -52,27 +72,47 @@ module.exports = function createDashboardI18n(initialLanguage) {
       taskOwn:'当前代理',taskSubagents:'子代理（{n}）',taskLoading:'正在汇总子代理…',taskPartial:'部分子代理暂不可读取',taskCurrentOnly:'仅当前代理；子代理统计暂不可用',
       transcriptTitle:'已记录文本估算',transcriptUser:'用户文本',transcriptAssistant:'回复与思考',transcriptTool:'工具输出',transcriptSystem:'系统文本',transcriptMarkers:'压缩标记记录',transcriptImages:'图像生成步骤',transcriptPartial:'不完整',transcriptLoading:'读取中…',transcriptUnavailable:'不可用',transcriptSaved:'已保存',transcriptBasis:'日志文本估算，非当前上下文或计费用量。不含隐藏提示、媒体和工具调用参数。',
       contextHostLimit:'当前窗口容量（宿主）',contextProviderCapacity:'供应商容量参考',contextCompressionLimit:'压缩触发阈值',contextLimitUnknown:'未知',contextReferenceBasis:'供应商规格参考，不代表当前会话可用容量。',
-      contextCompactions:'已压缩',contextCompactionCount:'{n} 次',contextCompactionsTitle:'当前会话已记录的上下文压缩次数：{n} 次',
+      contextCompactions:'已压缩',contextCompactionCount:'压缩 {n} 次',contextCompactionSummary:'已压缩 {n} 次',contextCompactionsTitle:'当前会话已记录的上下文压缩次数：{n} 次',
       context:'上下文窗口',contextShort:'上下文',contextUsed:'{used}% 已用',contextTokens:'{used} / {max} toks',contextUnknown:'上下文容量不可用',contextUnavailable:'此请求暂无可用上下文统计。',contextBasis:'宿主在最近请求开始时的估计值，非累计 Token，也非流式实时计数。',contextModel:'采样模型',contextLimit:'窗口容量',contextUsage:'已用 Token（估计）',contextSaved:'显示已保存的上下文统计（{time}）。',contextExceeded:'宿主估计值超过返回的窗口容量。',
+      compositionTitle:'上下文构成',compositionCustomization:'定制注入',compositionCustomizationValue:'定制注入 {tokens}',compositionUser:'用户消息',compositionThinking:'助手思考',compositionReply:'助手回复',compositionAssistant:'助手（思考+回复）',compositionTool:'工具结果',compositionSystem:'系统文本',compositionOther:'其他上下文',compositionRemaining:'剩余空间',compositionSourceSteps:'步级用量桶',compositionSourceTranscript:'日志文本估算',compositionSourceHybrid:'步级桶 + 日志估算',compositionSourceHost:'宿主 8 分类精确口径',compositionBasis:'动态分段为估算值，按宿主报告的已用 Token 归一（来源：{source}）；定制注入为宿主 token 基数精确值。',
+      compositionSystemPrompt:'系统提示词',compositionMcpTools:'MCP 工具',compositionSubagents:'子代理',compositionSkills:'技能注入',compositionPlugins:'插件注入',compositionRules:'规则注入',compositionTools:'内置工具',compositionChatMessages:'对话消息',
+      compositionViewList:'清单',compositionViewBar:'条形',compositionViewToggle:'构成视图',compositionGroupRules:'规则',compositionGroupSkills:'技能',compositionGroupSubagents:'子代理',compositionGroupMcpTools:'MCP 工具',compositionExactTag:'精确',compositionEstimateTag:'估算',compositionWindowShare:'占窗口 {pct}%',avgCacheHitRate:'平均缓存命中率',
+      tokenBaseDrilldown:'定制注入明细',tokenBaseCustomBudget:'定制总预算',tokenBaseRulesBudget:'规则预算',tokenBaseEmpty:'暂无定制注入明细。',
+      trendTitle:'上下文趋势',trendBasis:'逐请求输入 Token（未缓存 + 缓存读 + 写）；虚线标记压缩/检查点事件。',trendSample:'{n} 次请求',trendCompaction:'压缩',trendCheckpoint:'检查点',trendModeToggle:'趋势口径',trendModeTotal:'总计',trendModeDelta:'增量',trendReclaimed:'回收 {tokens}',
+      panelViewSwitch:'面板视图',panelViewSession:'当前会话',panelViewActivity:'每日/每周活动',panelViewModels:'按模型用量',panelViewInsights:'全局洞察',panelResetSession:'返回当前激活会话',
+      usageToday:'今日用量',usageMonth:'本月用量',usageViewActivity:'每日/每周活动',usageViewModels:'按模型用量',
+      auditButton:'审计',auditTitle:'会话审计',auditTabFiles:'文件活动',auditTabCommands:'命令执行',auditTabSteps:'步骤浏览',auditLoading:'正在加载会话审计…',auditUnavailable:'会话审计暂不可用。',auditEmptyFiles:'暂无文件操作记录。',auditEmptyCommands:'暂无命令执行记录。',auditEmptySteps:'暂无步骤记录。',
+      auditFilterAll:'全部',auditFilterThinking:'思考',auditFilterTools:'工具',auditFilterAnswer:'回答',auditFilterUser:'用户',
+      auditOpRead:'读取',auditOpEdit:'编辑',auditOpWrite:'写入',auditOpSearch:'搜索',auditStepRef:'第 {n} 步',auditExitCode:'退出码 {code}',auditRunning:'运行中',
+      creditsLabel:'Credits',creditsPrompt:'Prompt 额度',creditsFlow:'Flow 额度',creditsBadge:'{prompt}P · {flow}F',estimatedCostLabel:'预估费用',estimatedBadge:'估算',estimatedCostTitle:'按公开参考单价估算，非官方账单。',
+      insightsAll:'全部',insightsActive:'活跃',insightsArchived:'已归档',insightsSortRecent:'最近更新',insightsSortTokens:'Token 总量',insightsSortContext:'当前上下文',insightsSortCost:'预估费用',insightsSearchPlaceholder:'搜索会话…',insightsScan:'重新扫描',insightsScanning:'正在扫描本地会话…',
+      insightsKpiSessions:'全部会话',insightsKpiSessionsSub:'{active} 活跃 · {archived} 归档',insightsKpiTokens:'Token 消耗',insightsKpiRoundsSub:'{n} 轮对话',insightsKpiCost:'预估费用',insightsKpiPricedSub:'已计价 {priced}/{total}',insightsKpiCache:'缓存命中率',insightsKpiTools:'工具调用',insightsKpiDuration:'活跃时长',insightsKpiCallsSub:'{n} 次模型调用',
+      insights7dTitle:'近 7 天用量',insightsHeatmapTitle:'活跃度热力图',insightsHeatmapSessions:'会话数',insightsHeatmapTokens:'Token',insightsCompTitle:'Token 构成',insightsProjects:'项目分布',insightsSkills:'技能加载',insightsTools:'工具调用',insightsCommands:'命令执行',insightsSessionsTitle:'会话列表（{n}）',insightsEmpty:'未发现本地会话日志。',insightsCacheMeta:'{total} 个会话 · {ms}ms',
       savedStats:'显示已保存的会话统计（{time}）。',saveFailed:'统计暂时无法保存到本地。',
       strip:'Antigrative Dashboard 会话与额度状态条',session:'会话统计',cache:'缓存命中',cacheTitle:'Token 用量',five:'5h 额度',week:'周额度',weekShort:'周',
-      modelTime:'模型调用用时',toolTime:'工具调用用时',ttft:'首 token 平均（TTFT）',ttftShort:'首字耗时',latestSpeed:'最新速度',sessionAvg:'会话平均',peakSpeed:'峰值',basisShortResponse:'正文输出',basisShortAll:'总输出',sessionTps:'会话输出速率（TPS）',latest:'最近一次请求',tokens:'正文 / 思考输出',remaining:'剩余',
+      modelTime:'模型调用用时',toolTime:'工具调用用时',ttft:'首字延迟 P50 (TTFT)',ttftShort:'首字 (P50 / 最新)',ttftBasis:'首字延迟 TTFT（到首个流式/思考 Token，非正文首字）· 会话 P50：{p50} · 最新：{latest}',latestSpeed:'最新解码',latestSpeedTip:'最近一条合格请求的纯流式解码速度（总输出含思考 ÷ 流式时长；已隔离 < 1s 或 < 30 输出 Token 的短窗口样本）。',sessionAvg:'会话解码',e2eSpeed:'端到端速率',e2eShort:'端到端',e2eBasis:'端到端有效速率：合格请求总输出 Token ÷（首字延迟 + 流式时长），反映计入等待后的综合效率。',peakSpeed:'解码峰值',peakBasis:'合格样本中的纯流式解码峰值（已隔离 < 1s 或 < 30 输出 Token 的短窗口突发）。',basisShortResponse:'仅正文输出',basisShortAll:'总输出（含思考）',sessionTps:'会话解码速率（TPS）',latest:'最近一次请求',tokens:'正文 / 思考输出',remaining:'剩余',
       resetIn:'重置倒计时',resetTime:'重置时间（北京时间）',group:'额度组',selectGroup:'选择额度组',refresh:'刷新额度',refreshStats:'刷新统计',refreshing:'正在刷新…',
       speedStyle:'速度卡样式',styleMinimal:'简约',styleCat:'像素猫',styleSaveFailed:'样式设置暂时无法保存，请重试。',outlookOk:'额度充裕',outlookTight:'额度偏紧',outlookExhaust:'重置前耗尽',paceIdle:'暂未消耗',forecastLeft:'预计重置时剩 ~{pct}',forecastDepletes:'预计 {eta} 后耗尽、比重置早 {early}',forecastWarming:'已耗 {pct} · 采样预热中',forecastBasis:'剩余额度 {remaining} · 剩余时间 {time} · 按本窗口平均消耗线性推算',
       waiting:'等待刷新',connecting:'连接 Antigravity…',waitingApp:'等待 Antigravity',waitingModel:'等待模型生成',waitingRequest:'尚无请求',hover:'悬停状态条，查看详细统计',autoConnect:'打开应用后自动连接',loadingQuota:'读取额度…',unavailableQuota:'额度暂不可用',
       live:'已连接 Antigrative Dashboard',stale:'显示上次成功读取的额度',offline:'Antigrative Dashboard 暂未连接',
-      responseBasis:'统计方式：正文 Token ÷ 流式时长；会话 TPS 按总时长加权。',allBasis:'统计方式：输出 Token ÷ 流式时长；此模型未拆分正文与思考。',
-      missingTime:'{n} 次请求缺少时长，未计入 TPS。',shortSample:'最近请求不足 1 秒，单次速率波动较大。',running:'生成中，显示已完成请求统计。',
+      responseBasis:'纯流式解码速度：正文 Token ÷ 流式时长（缺少总输出计数）；会话 TPS 按总时长加权。',allBasis:'纯流式解码速度：总输出 Token（含思考）÷ 流式时长；会话 TPS 按合格样本总时长加权。',
+      missingTime:'{n} 次请求缺少时长，未计入 TPS。',shortSample:'最近请求为短窗口（< 1 秒或 < 30 输出 Token），已隔离该条速率。',running:'生成中，显示已完成请求统计。',
       timingUnreliable:'计时异常',ratePending:'等待重算',excludedTime:'已排除 {n} 次异常计时，不计入 TPS。',rateWarning:'另有 {n} 次短时或高速度采样可能波动，仍计入 TPS。',rateWarningOnly:'{n} 次短时或高速度采样可能波动，仍计入 TPS。',rateReasons:'原因：{reasons}。',rateReasonCount:'{reason}：{n} 次',rateUsageRetained:'Token 和缓存用量仍完整保留。',legacyRate:'已保存的 TPS 使用旧算法；连接后打开此对话即可重新计算。',
-      reasonToken:'Token 统计范围不一致',reasonDuplicate:'同一请求的记录冲突',reasonRetry:'重试的 Token 与计时范围不明确',reasonTool:'工具输出的计时窗口过短',reasonOutlier:'短时速率显著高于同模型基线',reasonNonfinite:'计算速率无效',
+      reasonToken:'Token 统计范围不一致',reasonDuplicate:'同一请求的记录冲突',reasonRetry:'重试的 Token 与计时范围不明确',reasonTool:'工具输出的计时窗口过短',reasonOutlier:'短时速率显著高于同模型基线',reasonShortWindow:'短窗口或低输出样本（< 1 秒或 < 30 输出 Token）',reasonNonfinite:'计算速率无效',
       sample:'{rounds}轮 {steps}步 · {requests} 次采样',sampleCount:'{n} 次采样',rounds:'{rounds}轮 {steps}步 ·',
       noQuota:'账户未返回此额度窗口。',disabledQuota:'此额度窗口已停用。',noFraction:'账户未返回剩余比例。',sharedQuota:'同组模型共享额度。',quotaSource:'余额与重置时间来自账户接口。',updated:'{time} 更新',health:'额度更新于 {time} · 真实请求统计',firstUpdate:'等待首次更新',
-      cacheRate:'缓存命中',cacheRead:'缓存读取',cacheInput:'总输入',cacheMiss:'未缓存输入',cacheWrite:'缓存写入',cacheOutput:'输出',cacheBasis:'缓存读取 token ÷ 总输入 token，按请求 token 总量加权；缓存写入不算命中。',cacheMissing:'{n} 次请求缺少缓存统计。',cacheUnavailable:'此会话暂无可用缓存统计。',cacheCoverage:'{measured} / {total} 次请求',
+      cacheRate:'缓存命中',cacheHitRateColon:'缓存命中率：',cacheRead:'缓存读取',cacheInput:'总输入',cacheMiss:'未缓存输入',cacheWrite:'缓存写入',cacheOutput:'输出',cacheBasis:'缓存读取 token ÷ 总输入 token，按请求 token 总量加权；缓存写入不算命中。',cacheMissing:'{n} 次请求缺少缓存统计。',cacheUnavailable:'此会话暂无可用缓存统计。',cacheCoverage:'{measured} / {total} 次请求',
       language:'语言',switchLanguage:'Switch to English',languageSaveFailed:'语言设置暂时无法保存，请重试。',checkUpdate:'检查更新',reconnecting:'等待控件重新连接',panelUnavailable:'统计面板暂时无法连接',invalidData:'统计数据格式不兼容',
       usageScopeLocal:'本机全部',usageScopeAccount:'当前账号',quotaWindowUsage:'周期用量',quotaWindowFullRef:'约 {full} 满额',quotaWindowBasis:'当前账号该额度周期内本机实测流经 Token；估算满额仅作同比例参考（不同模型与缓存折算权重不同）。',
       quotaRingTitle:'剩余额度',quotaRingUnknown:'余额未知',quotaDisplay:'额度显示',quotaDisplayBoth:'双数字',quotaDisplayAuto:'自动',quotaDisplayCompact:'角标',quotaDisplaySaveFailed:'显示模式暂时无法保存，请重试。',
       inlineReconnecting:'内嵌栏正在自动重连；此面板仍可查看统计。',panelInlineReconnecting:'内嵌栏正在自动重连；此面板仍可查看统计。',panelDebugPortReady:'宿主未开启调试端口（已自动配置启动入口）；请完全退出并从快捷方式重开 Antigravity 以恢复内嵌栏，当前可在此面板查看统计。',panelDebugPortManual:'Antigravity 2.33+ 需带 --remote-debugging-port=0 --remote-debugging-address=127.0.0.1（或运行 python3 manage.py launch）启动以显示内嵌栏；此面板仍可查看统计。',missingDebugPort:'当前 Antigravity 未开启调试端口，无法挂载内嵌状态栏。',relaunchDebugButton:'一键重启并恢复状态栏',relaunchingDebug:'正在重启 Antigravity…',relaunchDebugFailed:'自动重启未能触发，请使用 Antigravity (Debug) 启动器重新打开。',relaunchDebugCooldown:'已发起重启请求，请稍候等待 Antigravity 重新打开。',relaunchDebugNotRunning:'未检测到运行中的 Antigravity 主程序。',autoRelaunchLabel:'缺少调试端口时自动重启恢复（如更新后）',autoRelaunchSaveFailed:'自动重启设置暂时无法保存。',
       contextCap:'上下文上限',contextCapDefault:'默认',contextCapHostDefault:'宿主默认',contextCapFollowGlobal:'跟随全局',contextCapScopeGlobal:'全局',contextCapScopeModel:'模型覆盖',contextCapGlobalBadge:'全局 {limit}',contextCapOverrideBadge:'覆盖 {limit}',contextCapOverrideDefaultBadge:'覆盖 · 默认',contextCapApply:'应用',contextCapPlaceholder:'如 320K',contextCapInvalid:'请输入 16K–2M（如 320K 或 320000）。',contextCapSaveFailed:'上下文上限暂时无法保存，请重试。',contextCapNoModel:'请先选择模型。',contextCapRemoveOverride:'移除 {model} 的覆盖',contextCapOverridesHeading:'已覆盖模型',contextCapInactiveHint:'已保存，但仅在内嵌状态栏已挂载时对新消息生效。',
+      poolGemini:'Gemini',pool3p:'Claude / 3p',poolLocal:'本地 / BYOM',poolOther:'其他',poolRollup:'额度池汇总',
+      multiAgentDetails:'多代理与模型拆分',sessionRoleLabel:'代理角色',roleCoordinator:'协调主代理',roleWorker:'执行子代理',roleMonitor:'监控看守',roleSidecar:'定时后台任务',
+      orchestrationOverhead:'协调开销',workerExecution:'子代理执行',cacheMissSurge:'{n} 次缓存未命中峰值（{tokens}）',
+      contextBreakdown:'上下文与工具构成',breakdownUser:'用户',breakdownReply:'回复',breakdownThinking:'思考',breakdownTools:'工具返回',breakdownToolCalls:'工具入参',breakdownSystem:'系统',
+      topTools:'高占用工具',bloatBadge:'{n} 项膨胀',bloatWarningLine:'{tool} #{step}: {tokens}',bloatHint:'单次负载 ≥ 20K（严重 ≥ 50K）',
+      hostUiLocalization:'宿主界面汉化',hostUiLocalizationHint:'将 Antigravity 宿主界面菜单与按钮汉化为简体中文（热切换无需重启）',hostUiLocalizationOn:'开启',hostUiLocalizationOff:'关闭',hostUiLocalizationSaveFailed:'宿主汉化设置暂时无法保存，请重试。',hostUiLocalizationEnableAction:'开启宿主界面汉化',hostUiLocalizationDisableAction:'关闭宿主界面汉化',
     },
     'zh-TW':{
       collectionBackgroundFailed:'背景暫時無法完成，稍後會自動重試。',collectionProcessing:'正在補全統計',collectionProcessingReason:'背景處理中，可繼續使用。',collectionProgress:'查看進度',collectionProgressCounts:'已處理 {steps} 個步驟 · {requests} 筆請求記錄',collectionQueued:'等待處理',collectionSteps:'讀取步驟',collectionGenerators:'讀取請求記錄',collectionReducing:'計算統計',collectionPublishing:'儲存已驗證統計',
@@ -87,27 +127,47 @@ module.exports = function createDashboardI18n(initialLanguage) {
       taskOwn:'目前代理',taskSubagents:'子代理（{n}）',taskLoading:'正在彙總子代理…',taskPartial:'部分子代理暫時無法讀取',taskCurrentOnly:'僅目前代理；子代理統計暫時無法取得',
       transcriptTitle:'已記錄文字預估',transcriptUser:'使用者文字',transcriptAssistant:'回覆與思考過程',transcriptTool:'工具輸出',transcriptSystem:'系統文字',transcriptMarkers:'壓縮標記記錄',transcriptImages:'圖片生成步驟',transcriptPartial:'部分記錄',transcriptLoading:'載入中…',transcriptUnavailable:'無法提供',transcriptSaved:'已儲存',transcriptBasis:'依記錄文字推算之預估值，非作用中上下文或計費用量。不含隱藏提示詞、媒體檔案與工具呼叫引數。',
       contextHostLimit:'目前視窗容量（宿主環境）',contextProviderCapacity:'供應商規格容量參考',contextCompressionLimit:'觸發壓縮門檻',contextLimitUnknown:'未知',contextReferenceBasis:'模型供應商規格參考值，不代表目前對話的可用容量。',
-      contextCompactions:'已壓縮',contextCompactionCount:'{n} 次',contextCompactionsTitle:'目前對話已記錄的上下文壓縮次數：{n} 次',
+      contextCompactions:'已壓縮',contextCompactionCount:'壓縮 {n} 次',contextCompactionSummary:'已壓縮 {n} 次',contextCompactionsTitle:'目前對話已記錄的上下文壓縮次數：{n} 次',
       context:'上下文視窗',contextShort:'上下文',contextUsed:'{used}% 已使用',contextTokens:'{used} / {max} toks',contextUnknown:'目前無法取得上下文容量',contextUnavailable:'此請求目前無法取得上下文統計資料。',contextBasis:'宿主環境於最近一次請求發起時的預估值，非累計 Token，亦非串流即時計數。',contextModel:'取樣模型',contextLimit:'視窗容量',contextUsage:'已用 Token（預估）',contextSaved:'顯示已儲存的上下文統計資料（{time}）。',contextExceeded:'宿主預估值已超過回傳的視窗容量。',
+      compositionTitle:'上下文構成',compositionCustomization:'客製注入',compositionCustomizationValue:'客製注入 {tokens}',compositionUser:'使用者訊息',compositionThinking:'助手思考',compositionReply:'助手回覆',compositionAssistant:'助手（思考+回覆）',compositionTool:'工具結果',compositionSystem:'系統文字',compositionOther:'其他上下文',compositionRemaining:'剩餘空間',compositionSourceSteps:'步級用量桶',compositionSourceTranscript:'日誌文字估算',compositionSourceHybrid:'步級桶 + 日誌估算',compositionSourceHost:'宿主 8 分類精確口徑',compositionBasis:'動態分段為估算值，按宿主回報的已用 Token 歸一（來源：{source}）；客製注入為宿主 token 基數精確值。',
+      compositionSystemPrompt:'系統提示詞',compositionMcpTools:'MCP 工具',compositionSubagents:'子代理',compositionSkills:'技能注入',compositionPlugins:'外掛注入',compositionRules:'規則注入',compositionTools:'內建工具',compositionChatMessages:'對話訊息',
+      compositionViewList:'清單',compositionViewBar:'條形',compositionViewToggle:'構成檢視',compositionGroupRules:'規則',compositionGroupSkills:'技能',compositionGroupSubagents:'子代理',compositionGroupMcpTools:'MCP 工具',compositionExactTag:'精確',compositionEstimateTag:'估算',compositionWindowShare:'佔視窗 {pct}%',avgCacheHitRate:'平均快取命中率',
+      tokenBaseDrilldown:'客製注入明細',tokenBaseCustomBudget:'客製總預算',tokenBaseRulesBudget:'規則預算',tokenBaseEmpty:'暫無客製注入明細。',
+      trendTitle:'上下文趨勢',trendBasis:'逐請求輸入 Token（未快取 + 快取讀 + 寫）；虛線標記壓縮/檢查點事件。',trendSample:'{n} 次請求',trendCompaction:'壓縮',trendCheckpoint:'檢查點',trendModeToggle:'趨勢口徑',trendModeTotal:'總計',trendModeDelta:'增量',trendReclaimed:'回收 {tokens}',
+      panelViewSwitch:'面板檢視',panelViewSession:'目前工作階段',panelViewActivity:'每日/每週活動',panelViewModels:'依模型用量',panelViewInsights:'全域洞察',panelResetSession:'返回目前啟用對話',
+      usageToday:'今日用量',usageMonth:'本月用量',usageViewActivity:'每日/每週活動',usageViewModels:'依模型用量',
+      auditButton:'稽核',auditTitle:'工作階段稽核',auditTabFiles:'檔案活動',auditTabCommands:'命令執行',auditTabSteps:'步驟瀏覽',auditLoading:'正在載入工作階段稽核…',auditUnavailable:'工作階段稽核暫不可用。',auditEmptyFiles:'暫無檔案操作記錄。',auditEmptyCommands:'暫無命令執行記錄。',auditEmptySteps:'暫無步驟記錄。',
+      auditFilterAll:'全部',auditFilterThinking:'思考',auditFilterTools:'工具',auditFilterAnswer:'回答',auditFilterUser:'使用者',
+      auditOpRead:'讀取',auditOpEdit:'編輯',auditOpWrite:'寫入',auditOpSearch:'搜尋',auditStepRef:'第 {n} 步',auditExitCode:'結束碼 {code}',auditRunning:'執行中',
+      creditsLabel:'Credits',creditsPrompt:'Prompt 額度',creditsFlow:'Flow 額度',creditsBadge:'{prompt}P · {flow}F',estimatedCostLabel:'預估費用',estimatedBadge:'估算',estimatedCostTitle:'依公開參考單價估算，非官方帳單。',
+      insightsAll:'全部',insightsActive:'作用中',insightsArchived:'已封存',insightsSortRecent:'最近更新',insightsSortTokens:'Token 總量',insightsSortContext:'目前上下文',insightsSortCost:'預估費用',insightsSearchPlaceholder:'篩選對話…',insightsScan:'重新掃描',insightsScanning:'正在掃描本機對話…',
+      insightsKpiSessions:'全部對話',insightsKpiSessionsSub:'{active} 作用中 · {archived} 封存',insightsKpiTokens:'Token 消耗',insightsKpiRoundsSub:'{n} 輪對話',insightsKpiCost:'預估費用',insightsKpiPricedSub:'已計價 {priced}/{total}',insightsKpiCache:'快取命中率',insightsKpiTools:'工具呼叫',insightsKpiDuration:'活躍時長',insightsKpiCallsSub:'{n} 次模型呼叫',
+      insights7dTitle:'近 7 天用量',insightsHeatmapTitle:'活躍度熱力圖',insightsHeatmapSessions:'對話數',insightsHeatmapTokens:'Token',insightsCompTitle:'Token 構成',insightsProjects:'專案分佈',insightsSkills:'技能載入',insightsTools:'工具呼叫',insightsCommands:'命令執行',insightsSessionsTitle:'對話列表（{n}）',insightsEmpty:'未發現本機對話日誌。',insightsCacheMeta:'{total} 個對話 · {ms}ms',
       savedStats:'顯示已儲存的對話統計資料（{time}）。',saveFailed:'統計資料暫時無法儲存至本機。',
       strip:'Antigrative Dashboard 對話與配額狀態列',session:'工作階段統計',cache:'快取命中',cacheTitle:'Token 用量',five:'5 小時配額',week:'每週配額',weekShort:'週',
-      modelTime:'模型呼叫耗時',toolTime:'工具呼叫耗時',ttft:'首字回應平均時間 (TTFT)',ttftShort:'首字耗時',latestSpeed:'最新速率',sessionAvg:'階段平均',peakSpeed:'峰值',basisShortResponse:'回覆輸出',basisShortAll:'總輸出',sessionTps:'連線階段輸出速率 (TPS)',latest:'最近一次請求',tokens:'回覆內文 / 思考輸出',remaining:'剩餘',
+      modelTime:'模型呼叫耗時',toolTime:'工具呼叫耗時',ttft:'首字延遲 P50 (TTFT)',ttftShort:'首字 (P50 / 最新)',ttftBasis:'首字延遲 TTFT（至首個串流/思考 Token，非正文首字）· 階段 P50：{p50} · 最新：{latest}',latestSpeed:'最新解碼',latestSpeedTip:'最近一筆合格請求的純串流解碼速度（總輸出含思考 ÷ 串流耗時；已隔離 < 1s 或 < 30 輸出 Token 的短視窗樣本）。',sessionAvg:'階段解碼',e2eSpeed:'端對端速率',e2eShort:'端對端',e2eBasis:'端對端有效速率：合格請求總輸出 Token ÷（首字延遲 + 串流耗時），反映計入等待後的綜合效率。',peakSpeed:'解碼峰值',peakBasis:'合格樣本中的純串流解碼峰值（已隔離 < 1s 或 < 30 輸出 Token 的短視窗突發）。',basisShortResponse:'僅回覆輸出',basisShortAll:'總輸出（含思考）',sessionTps:'連線階段解碼速率 (TPS)',latest:'最近一次請求',tokens:'回覆內文 / 思考輸出',remaining:'剩餘',
       resetIn:'重設倒數',resetTime:'重設時間 (UTC+8)',group:'配額群組',selectGroup:'選取配額群組',refresh:'重新整理配額',refreshStats:'重新整理統計',refreshing:'正在重新整理…',
       speedStyle:'速度卡樣式',styleMinimal:'簡約',styleCat:'像素貓',styleSaveFailed:'樣式設定暫時無法儲存，請重試。',outlookOk:'配額充裕',outlookTight:'配額偏緊',outlookExhaust:'重設前耗盡',paceIdle:'暫未消耗',forecastLeft:'預計重設時剩 ~{pct}',forecastDepletes:'預計 {eta} 後耗盡、比重設早 {early}',forecastWarming:'已耗 {pct} · 取樣預熱中',forecastBasis:'剩餘配額 {remaining} · 剩餘時間 {time} · 依本週期平均消耗線性推算',
       waiting:'等待重新整理',connecting:'連線至 Antigravity…',waitingApp:'等待 Antigravity',waitingModel:'等待模型生成',waitingRequest:'尚無請求',hover:'將游標移至狀態列可檢視詳細統計',autoConnect:'開啟應用程式後將自動連線',loadingQuota:'讀取配額中…',unavailableQuota:'配額暫時無法取得',
       live:'已連線至 Antigrative Dashboard',stale:'顯示前次成功讀取的配額',offline:'Antigrative Dashboard 尚未連線',
-      responseBasis:'統計方式：回覆 Token ÷ 串流耗時；連線階段 TPS 依總時長加權計算。',allBasis:'統計方式：輸出 Token ÷ 串流耗時；此模型未區分回覆與思考過程。',
-      missingTime:'{n} 次請求缺少耗時記錄，未計入 TPS。',shortSample:'最近一次請求耗時未滿 1 秒，單次速率波動可能較大。',running:'生成中，目前顯示已完成請求之統計。',
+      responseBasis:'純串流解碼速度：回覆 Token ÷ 串流耗時（缺少總輸出計數）；階段 TPS 依總時長加權。',allBasis:'純串流解碼速度：總輸出 Token（含思考）÷ 串流耗時；階段 TPS 依合格樣本總時長加權。',
+      missingTime:'{n} 次請求缺少耗時記錄，未計入 TPS。',shortSample:'最近一次請求為短視窗（< 1 秒或 < 30 輸出 Token），已隔離該筆速率。',running:'生成中，目前顯示已完成請求之統計。',
       timingUnreliable:'計時異常',ratePending:'等待重新計算',excludedTime:'已排除 {n} 次計時異常的請求，不計入 TPS。',rateWarning:'另有 {n} 次短時間或極高速取樣可能存在波動，仍已計入 TPS。',rateWarningOnly:'{n} 次短時間或極高速取樣可能存在波動，仍已計入 TPS。',rateReasons:'原因：{reasons}。',rateReasonCount:'{reason}：{n} 次',rateUsageRetained:'Token 與快取用量仍完整保留。',legacyRate:'已儲存的 TPS 使用舊版演算法；連線後重新開啟此對話即可重新計算。',
-      reasonToken:'Token 統計範圍不一致',reasonDuplicate:'同一請求存在衝突記錄',reasonRetry:'重試的 Token 與計時範圍不明確',reasonTool:'純工具輸出的計時區間過短',reasonOutlier:'短時間速率顯著高於同模型基準線',reasonNonfinite:'計算速率無效',
+      reasonToken:'Token 統計範圍不一致',reasonDuplicate:'同一請求存在衝突記錄',reasonRetry:'重試的 Token 與計時範圍不明確',reasonTool:'純工具輸出的計時區間過短',reasonOutlier:'短時間速率顯著高於同模型基準線',reasonShortWindow:'短視窗或低輸出樣本（< 1 秒或 < 30 輸出 Token）',reasonNonfinite:'計算速率無效',
       sample:'{rounds} 輪 {steps} 步 · {requests} 次取樣',sampleCount:'{n} 次取樣',rounds:'{rounds} 輪 {steps} 步 ·',
       noQuota:'此帳號未回傳該配額區間。',disabledQuota:'此配額區間已停用。',noFraction:'帳號未回傳剩餘比例。',sharedQuota:'同群組之模型共用配額。',quotaSource:'餘額與重設時間來自帳號 API。',updated:'{time} 更新',health:'配額更新於 {time} · 真實請求指標',firstUpdate:'等待初次更新',
-      cacheRate:'快取命中率',cacheRead:'快取讀取',cacheInput:'總輸入',cacheMiss:'未快取輸入',cacheWrite:'快取寫入',cacheOutput:'輸出',cacheBasis:'快取讀取 Token ÷ 總輸入 Token，依各請求之 Token 總量加權計算；快取寫入不列入命中。',cacheMissing:'{n} 次請求缺少快取統計資料。',cacheUnavailable:'此對話目前無法取得快取統計資料。',cacheCoverage:'{measured} / {total} 次請求',
+      cacheRate:'快取命中率',cacheHitRateColon:'快取命中率：',cacheRead:'快取讀取',cacheInput:'總輸入',cacheMiss:'未快取輸入',cacheWrite:'快取寫入',cacheOutput:'輸出',cacheBasis:'快取讀取 Token ÷ 總輸入 Token，依各請求之 Token 總量加權計算；快取寫入不列入命中。',cacheMissing:'{n} 次請求缺少快取統計資料。',cacheUnavailable:'此對話目前無法取得快取統計資料。',cacheCoverage:'{measured} / {total} 次請求',
       language:'語言',switchLanguage:'Switch to English',languageSaveFailed:'語言設定暫時無法儲存，請再試一次。',checkUpdate:'檢查更新',reconnecting:'等待控制項重新連線',panelUnavailable:'統計面板暫時無法連線',invalidData:'統計資料格式不相容',
       usageScopeLocal:'本機全部',usageScopeAccount:'目前帳號',quotaWindowUsage:'週期用量',quotaWindowFullRef:'約 {full} 滿額',quotaWindowBasis:'目前帳號此配額週期內本機實測流經 Token；預估滿額僅作等比例參考（不同模型與快取換算權重不同）。',
       quotaRingTitle:'剩餘額度',quotaRingUnknown:'餘額未知',quotaDisplay:'額度顯示',quotaDisplayBoth:'雙數字',quotaDisplayAuto:'自動',quotaDisplayCompact:'角標',quotaDisplaySaveFailed:'顯示模式暫時無法儲存，請再試一次。',
       inlineReconnecting:'內嵌狀態列正在自動重新連線；此面板仍可檢視統計資料。',panelInlineReconnecting:'內嵌狀態列正在自動重新連線；此面板仍可檢視統計資料。',panelDebugPortReady:'宿主未開啟偵錯連接埠（已自動設定啟動捷徑）；請完全退出並由捷徑重開 Antigravity 以恢復內嵌狀態列，目前可在此面板檢視統計資料。',panelDebugPortManual:'Antigravity 2.33+ 需帶 --remote-debugging-port=0 --remote-debugging-address=127.0.0.1（或執行 python3 manage.py launch）啟動以顯示內嵌狀態列；此面板仍可檢視統計資料。',missingDebugPort:'目前的 Antigravity 未開啟除錯連接埠，無法掛載內嵌狀態列。',relaunchDebugButton:'一鍵重啟並恢復狀態列',relaunchingDebug:'正在重啟 Antigravity…',relaunchDebugFailed:'無法自動觸發重啟，請使用 Antigravity (Debug) 啟動器重新開啟。',relaunchDebugCooldown:'已發起重啟請求，請稍候等待 Antigravity 重新開啟。',relaunchDebugNotRunning:'目前未偵測到執行中的 Antigravity 主程式。',autoRelaunchLabel:'缺少除錯連接埠時自動重啟恢復（如更新後）',autoRelaunchSaveFailed:'自動重啟設定暫時無法儲存。',
       contextCap:'上下文上限',contextCapDefault:'預設',contextCapHostDefault:'宿主預設',contextCapFollowGlobal:'跟隨全域',contextCapScopeGlobal:'全域',contextCapScopeModel:'模型覆寫',contextCapGlobalBadge:'全域 {limit}',contextCapOverrideBadge:'覆寫 {limit}',contextCapOverrideDefaultBadge:'覆寫 · 預設',contextCapApply:'套用',contextCapPlaceholder:'如 320K',contextCapInvalid:'請輸入 16K–2M（如 320K 或 320000）。',contextCapSaveFailed:'上下文上限暫時無法儲存，請重試。',contextCapNoModel:'請先選取模型。',contextCapRemoveOverride:'移除 {model} 的覆寫',contextCapOverridesHeading:'已覆寫模型',contextCapInactiveHint:'已儲存，但僅在內嵌狀態列已掛載時對新訊息生效。',
+      poolGemini:'Gemini',pool3p:'Claude / 3p',poolLocal:'本機 / BYOM',poolOther:'其他',poolRollup:'配額池彙總',
+      multiAgentDetails:'多代理與模型拆分',sessionRoleLabel:'代理角色',roleCoordinator:'協調主代理',roleWorker:'執行子代理',roleMonitor:'監控守望',roleSidecar:'定時背景工作',
+      orchestrationOverhead:'協調開銷',workerExecution:'子代理執行',cacheMissSurge:'{n} 次快取未命中峰值（{tokens}）',
+      contextBreakdown:'上下文與工具組成',breakdownUser:'使用者',breakdownReply:'回覆',breakdownThinking:'思考',breakdownTools:'工具回傳',breakdownToolCalls:'工具參數',breakdownSystem:'系統',
+      topTools:'高佔用工具',bloatBadge:'{n} 項膨脹',bloatWarningLine:'{tool} #{step}: {tokens}',bloatHint:'單次負載 ≥ 20K（嚴重 ≥ 50K）',
+      hostUiLocalization:'宿主介面漢化',hostUiLocalizationHint:'將 Antigravity 宿主介面選單與按鈕翻譯為簡體中文（熱切換無需重啟）',hostUiLocalizationOn:'開啟',hostUiLocalizationOff:'關閉',hostUiLocalizationSaveFailed:'宿主漢化設定暫時無法儲存，請重試。',hostUiLocalizationEnableAction:'開啟宿主介面漢化',hostUiLocalizationDisableAction:'關閉宿主介面漢化',
     },
   };
   let language=initialLanguage==='zh-CN'||initialLanguage==='zh-TW'?initialLanguage:'en';
@@ -195,9 +255,10 @@ module.exports = function createDashboardI18n(initialLanguage) {
         if(next<revision)return;
         if(error&&epoch>0&&value.language!==language)return; // retain an unsaved choice and its warning
         if(value.language===null&&epoch===0&&valid(initialLanguage)){void choose(initialLanguage);return;}
+        const prevLang=language,prevErr=error,first=revision<0;
         revision=next;error=false;
         if(valid(value.language)&&language!==value.language){language=value.language;if(value.language!=='en')lastZh=value.language;remember();}
-        notify();
+        if(first||language!==prevLang||prevErr)notify();
       } catch {error=true;notify();}
     }
     function choose(value) {
@@ -260,9 +321,11 @@ module.exports = function createDashboardI18n(initialLanguage) {
   const SPEED_STYLES=['minimal','cat'];
   const USAGE_SCOPES=['local','account'];
   const QUOTA_DISPLAYS=['both','auto','compact'];
+  const HOST_UI_LOCALIZATIONS=[false,true];
   function normalizeSpeedStyle(value){return SPEED_STYLES.includes(value)?value:'minimal';}
   function normalizeUsageScope(value){return USAGE_SCOPES.includes(value)?value:'local';}
   function normalizeQuotaDisplay(value){return QUOTA_DISPLAYS.includes(value)?value:'both';}
+  function normalizeHostUiLocalization(value){return value===true;}
   function connectSpeedStyle(options){
     const ctrl=connectChoicePreference({key:'speedStyle',allowed:SPEED_STYLES,fallback:'minimal',...options});
     return {sync:ctrl.sync,choose:ctrl.choose,get style(){return ctrl.value;},get error(){return ctrl.error;},dispose:ctrl.dispose};
@@ -274,6 +337,10 @@ module.exports = function createDashboardI18n(initialLanguage) {
   function connectQuotaDisplay(options){
     const ctrl=connectChoicePreference({key:'quotaDisplay',allowed:QUOTA_DISPLAYS,fallback:'both',...options});
     return {sync:ctrl.sync,choose:ctrl.choose,get value(){return ctrl.value;},get error(){return ctrl.error;},dispose:ctrl.dispose};
+  }
+  function connectHostUiLocalization(options){
+    const ctrl=connectChoicePreference({key:'hostUiLocalization',allowed:HOST_UI_LOCALIZATIONS,fallback:false,...options});
+    return {sync:ctrl.sync,choose:value=>ctrl.choose(value===true),get enabled(){return ctrl.value===true;},get error(){return ctrl.error;},dispose:ctrl.dispose};
   }
   const CONTEXT_LIMIT_MIN=16384,CONTEXT_LIMIT_MAX=2097152,CONTEXT_LIMIT_MAX_OVERRIDES=64;
   const CONTEXT_LIMIT_FORBIDDEN=new Set(['__proto__','constructor','prototype']);
@@ -427,9 +494,36 @@ module.exports = function createDashboardI18n(initialLanguage) {
   const quotaModelAliases={
     model_placeholder_m26:'Claude Opus 4.6 (Thinking)',
     model_placeholder_m35:'Claude Sonnet 4.6 (Thinking)',
+    model_placeholder_m405:'Claude Sonnet 5.5 (High)',
     model_placeholder_m318:'Gemini 3.8 Flash (High)',
     model_placeholder_m319:'Gemini 3.8 Flash (Medium)',
     model_placeholder_m320:'Gemini 3.8 Flash (Low)',
+    model_placeholder_m532:'Gemini 4 Neon (High)',
+    model_placeholder_m533:'Gemini 4 Neon (Medium)',
+    model_placeholder_m534:'Gemini 4 Neon (Low)',
+    model_placeholder_m535:'Gemini 4 Neon (XHigh)',
+    model_placeholder_m427:'Gemini 4 Carbon (High)',
+    model_placeholder_m437:'Gemini 4 Carbon (Medium)',
+    model_placeholder_m438:'Gemini 4 Carbon (Low)',
+    model_placeholder_m417:'Gemini 4 Argon (High)',
+    model_placeholder_m418:'Gemini 4 Argon (Medium)',
+    model_placeholder_m419:'Gemini 4 Argon (Low)',
+    model_placeholder_m525:'Gemini 4 Hydrogen (High)',
+    model_placeholder_m526:'Gemini 4 Hydrogen (Medium)',
+    model_placeholder_m527:'Gemini 4 Hydrogen (Low)',
+    model_placeholder_m528:'Gemini 4 Hydrogen (XHigh)',
+    model_placeholder_m537:'Orchestrator (Neon)',
+    'gemini-pro-orchestrator-neon':'Orchestrator (Neon)',
+    model_placeholder_m667:'Orchestrator (Carbon)',
+    'gemini-pro-orchestrator':'Orchestrator (Carbon)',
+    model_placeholder_m681:'Orchestrator (Argon)',
+    'gemini-pro-orchestrator-argon':'Orchestrator (Argon)',
+    model_placeholder_m669:'Gemini 4 Hydrogen (Orchestrator)',
+    'gemini-flash-worker-agy':'Gemini 4 Hydrogen (Orchestrator)',
+    model_placeholder_m18:'Gemini 2.5 Pro',
+    model_placeholder_m148:'Gemini 2.5 Pro',
+    model_placeholder_m50:'Gemini 2.5 Flash',
+    model_placeholder_m198:'Gemini 2.5 Flash',
     model_google_gemini_internal_byom:'Gemini (Internal BYOM)',
     model_openai_gpt_oss_120b_medium:'GPT-OSS 120B (Medium)',
     'gemini-pro-orchestrator-g1-pro':'Orchestrator (Argon)',
@@ -444,7 +538,7 @@ module.exports = function createDashboardI18n(initialLanguage) {
   function quotaGroupKind(group) {
     const id=String(group?.id||''),resolvedId=resolveQuotaModelToken(id),resolvedName=resolveQuotaModelToken(group?.name||''),value=id+' '+resolvedId+' '+resolvedName;
     if(/(?:^|[^a-z])argon(?:$|[^a-z])/i.test(value))return 'gemini-argon';
-    if(/gemini|hydrogen|carbon|orchestrator/i.test(value))return 'gemini';
+    if(/gemini|hydrogen|carbon|neon|orchestrator/i.test(value))return 'gemini';
     if(/claude|sonnet|opus|haiku|anthropic|gpt|openai|perplexity|fable/i.test(value)||/(?:^|[^a-z0-9])o[134](?:$|[^a-z0-9])/i.test(value)||/^3p(?:$|[-_])/i.test(id))return '3p';
     return null;
   }
@@ -558,5 +652,5 @@ module.exports = function createDashboardI18n(initialLanguage) {
     if(mode==='compact'&&show){const other=show==='5h'?wv:fv;if(other!==null&&other<=0.25)dot=other<=0.10?'danger':'warn';}
     return {five,week,min,show,arcValue,level,dot};
   }
-  return {mountLanguagePicker,normalizeSpeedStyle,connectSpeedStyle,normalizeUsageScope,connectUsageScope,normalizeQuotaDisplay,connectQuotaDisplay,normalizeContextLimitPolicy,connectContextLimit,quotaRingView,minimalTrail,t,rateNote,quotaGroupKind,quotaGroupLabel,chooseQuotaGroup,quotaWindows,quotaRemaining,shortEta,quotaForecast,groupQuotaPace,countdown,elapsed,resetDate,errorMessage,connectPreferences,get language(){return language;},setLanguage(value){language=value==='zh-CN'||value==='zh-TW'?value:'en';if(language!=='en')lastZh=language;},toggle(){language=language==='en'?(lastZh||'zh-TW'):'en';return language;}};
+  return {mountLanguagePicker,normalizeSpeedStyle,connectSpeedStyle,normalizeUsageScope,connectUsageScope,normalizeQuotaDisplay,connectQuotaDisplay,normalizeHostUiLocalization,connectHostUiLocalization,normalizeContextLimitPolicy,connectContextLimit,quotaRingView,minimalTrail,t,rateNote,quotaGroupKind,quotaGroupLabel,chooseQuotaGroup,quotaWindows,quotaRemaining,shortEta,quotaForecast,groupQuotaPace,countdown,elapsed,resetDate,errorMessage,connectPreferences,get language(){return language;},setLanguage(value){language=value==='zh-CN'||value==='zh-TW'?value:'en';if(language!=='en')lastZh=language;},toggle(){language=language==='en'?(lastZh||'zh-TW'):'en';return language;}};
 };

@@ -12,8 +12,8 @@ const keys=['uncached','cacheRead','cacheWrite','output'],HASH=/^[a-f0-9]{64}$/;
 const total=r=>keys.reduce((n,k)=>n+(r[k]??0),0);
 const valid=r=>r&&HASH.test(r.id)&&typeof r.model==='string'&&r.model.length<=120&&(r.at===null||Number.isSafeInteger(r.at)&&r.at>=0)&&keys.every(k=>r[k]===null||Number.isSafeInteger(r[k])&&r[k]>=0);
 const budget=256*1024*1024,cancel=new Int32Array(workerData.cancel),sleeper=new Int32Array(new SharedArrayBuffer(4));let operations=0;
-function check(){if(Atomics.load(cancel,0))throw Error('Usage operation cancelled');if(++operations%128===0)Atomics.wait(sleeper,0,0,2);}
-function database(file,{trackAccount=false}={}){const db=new DatabaseSync(file);db.exec(`PRAGMA journal_mode=DELETE;PRAGMA synchronous=FULL;PRAGMA temp_store=FILE;PRAGMA cache_size=-2048;PRAGMA mmap_size=0;PRAGMA max_page_count=65536;CREATE TABLE records(id TEXT PRIMARY KEY,j TEXT NOT NULL${trackAccount?',acct INTEGER NOT NULL DEFAULT 0':''});CREATE TABLE meta(account TEXT NOT NULL);`);db.prepare('INSERT INTO meta VALUES(?)').run(workerData.scope);return db;}
+function check(){if(Atomics.load(cancel,0))throw Error('Usage operation cancelled');if(++operations%1024===0)Atomics.wait(sleeper,0,0,2);}
+function database(file,{trackAccount=false,trackTotal=false}={}){const db=new DatabaseSync(file);db.exec(`PRAGMA journal_mode=DELETE;PRAGMA synchronous=FULL;PRAGMA temp_store=FILE;PRAGMA cache_size=-2048;PRAGMA mmap_size=0;PRAGMA max_page_count=65536;CREATE TABLE records(id TEXT PRIMARY KEY,j TEXT NOT NULL${trackAccount?',acct INTEGER NOT NULL DEFAULT 0':''}${trackTotal?',tot INTEGER NOT NULL DEFAULT 0':''});CREATE TABLE meta(account TEXT NOT NULL);`);db.prepare('INSERT INTO meta VALUES(?)').run(workerData.scope);return db;}
 async function rows(file,accept,{job=false,expectedAccount=workerData.scope}={}){
  check();if((await lstat(file)).isSymbolicLink())throw Error('Linked usage source rejected');const info=await stat(file);if(info.size>budget)throw Error('Usage source exceeds disk budget');
  if(file.endsWith('.json')){
@@ -60,8 +60,8 @@ async function summarize(){
  const allBuckets=workerData.scope==='all';
  const specs=Array.isArray(workerData.quotaWindowSpecs)?workerData.quotaWindowSpecs:[];
  const quotaGroups=Array.isArray(workerData.quotaGroups)?workerData.quotaGroups:[];
- const db=database(workerData.staging,{trackAccount:true});try{
-  const put=db.prepare('INSERT INTO records VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET j=excluded.j,acct=MAX(acct,excluded.acct)'),keepAcct=db.prepare('UPDATE records SET acct=1 WHERE id=?'),get=db.prepare('SELECT j,acct FROM records WHERE id=?');
+ const db=database(workerData.staging,{trackAccount:true,trackTotal:true});try{
+  const put=db.prepare('INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET j=CASE WHEN excluded.tot>records.tot THEN excluded.j ELSE records.j END,tot=MAX(records.tot,excluded.tot),acct=MAX(records.acct,excluded.acct)');
   const sources=[];
   if(allBuckets&&Array.isArray(workerData.buckets)){
    for(const b of workerData.buckets){
@@ -81,7 +81,7 @@ async function summarize(){
     check();db.exec('SAVEPOINT source');
     try{
      let count=0;
-     await rows(join(src.dir,name),row=>{count++;const previous=get.get(row.id);if(!previous||total(row)>total(JSON.parse(previous.j)))put.run(row.id,JSON.stringify(row),Math.max(previous?.acct||0,isAcct));else if(isAcct&&!previous.acct)keepAcct.run(row.id);},{expectedAccount:src.account});
+     await rows(join(src.dir,name),row=>{count++;put.run(row.id,JSON.stringify(row),isAcct,total(row));},{expectedAccount:src.account});
      db.exec('RELEASE source');
      if(src.account!==workerData.localScope&&(count>0||name.endsWith('.sqlite')))activeAccounts.add(src.account);
     }catch(e){db.exec('ROLLBACK TO source;RELEASE source');check();unreadable++;}

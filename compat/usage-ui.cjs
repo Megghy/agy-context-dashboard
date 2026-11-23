@@ -1,9 +1,41 @@
 // Shared local usage views. Values and model labels are inserted as text.
-module.exports = function createUsageDashboard({root,language,setMarkup,hostLabel='Antigravity',guideDismissed=false,onDismissGuide,onLanguage,onRefresh,onScope}) {
-  const dialog=document.createElement('dialog');dialog.id='usage-dashboard';dialog.setAttribute('popover','manual');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label',language.language==='zh-TW'?'用量統計':language.language==='zh-CN'?'用量统计':'Token usage');
-  dialog.style.cssText='width:min(1040px,calc(100vw - 40px));max-width:none;height:min(840px,calc(100dvh - 40px));max-height:none;box-sizing:border-box;overflow:hidden;visibility:visible;pointer-events:auto;padding:0;border:1px solid var(--pulse-border);border-radius:14px;background:var(--pulse-background);color:var(--pulse-foreground);box-shadow:0 16px 60px var(--pulse-shadow);';
-  const shell=document.createElement('div'),view=shell.attachShadow({mode:'open'});shell.style.height='100%';dialog.append(shell);root.append(dialog);
-  const backdrop=document.createElement('style');backdrop.textContent='#usage-dashboard{position:fixed;inset:0;margin:auto}#usage-dashboard::backdrop{background:rgba(0,0,0,.48);pointer-events:auto}';root.append(backdrop);
+module.exports = function createUsageDashboard({root,language,setMarkup,hostLabel='Antigravity',guideDismissed=false,onDismissGuide,onLanguage,onRefresh,onScope,embedded=false,showHeaderTabs=!embedded,onTabChange=null,themeHost=null}) {
+  setMarkup||=(target,markup)=>{
+    const fragment=document.createDocumentFragment(),stack=[fragment];let offset=0;
+    const entities={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:'\u00a0'};
+    const decode=s=>s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,(m,k)=>k[0]==='#'?String.fromCodePoint(parseInt(k.slice(k[1]?.toLowerCase()==='x'?2:1),k[1]?.toLowerCase()==='x'?16:10)):entities[k.toLowerCase()]||m);
+    for(let match,token=/<\/?([a-z][\w-]*)(\s[^<>]*?)?\s*\/?\s*>/gi;(match=token.exec(markup));offset=token.lastIndex){
+      if(match.index>offset)stack.at(-1).append(document.createTextNode(decode(markup.slice(offset,match.index))));
+      const tag=match[1].toLowerCase();
+      if(match[0][1]==='/'){if(stack.length>1&&stack.at(-1).localName===tag)stack.pop();continue;}
+      const parent=stack.at(-1),isSvg=tag==='svg'||parent.namespaceURI==='http://www.w3.org/2000/svg';
+      const el=isSvg?document.createElementNS('http://www.w3.org/2000/svg',tag):document.createElement(tag);
+      for(let a,attr=/([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+)))?/g;(a=attr.exec(match[2]||''));){
+        if(a[1]==='/'||/^on/i.test(a[1]))continue;
+        el.setAttribute(a[1],decode(a[2]??a[3]??a[4]??''));
+      }
+      parent.append(el);
+      if(!/\/\s*>$/.test(match[0]))stack.push(el);
+    }
+    if(offset<markup.length)fragment.append(document.createTextNode(decode(markup.slice(offset))));
+    target.replaceChildren(fragment);
+  };
+  let dialog=null,backdrop=null,surface=null,shell=document.createElement('div');
+  if(!embedded){
+    dialog=document.createElement('dialog');dialog.id='usage-dashboard';dialog.setAttribute('popover','manual');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label',language.language==='zh-TW'?'用量統計':language.language==='zh-CN'?'用量统计':'Token usage');
+    dialog.style.cssText='width:min(1040px,calc(100vw - 40px));max-width:none;height:min(840px,calc(100dvh - 40px));max-height:none;box-sizing:border-box;overflow:hidden;visibility:visible;pointer-events:auto;padding:0;border:1px solid var(--pulse-border);border-radius:14px;background:var(--pulse-background);color:var(--pulse-foreground);box-shadow:0 16px 60px var(--pulse-shadow);';
+    shell.style.height='100%';dialog.append(shell);root.append(dialog);
+    backdrop=document.createElement('style');backdrop.textContent='#usage-dashboard{position:fixed;inset:0;margin:auto}#usage-dashboard::backdrop{background:rgba(0,0,0,.48);pointer-events:auto}';root.append(backdrop);
+    surface=dialog;
+  }else{
+    surface=document.createElement('div');surface.id='usage-embed';surface.className='usage-embed';
+    surface.style.cssText='height:100%;width:100%;display:block;';
+    shell.style.cssText='height:100%;width:100%;display:block;';
+    surface.append(shell);root.append(surface);
+  }
+  const view=shell.attachShadow({mode:'open'});
+  const isActive=()=>!disposed&&(embedded?surface.isConnected&&!root.hidden:dialog.open);
+  const themeTarget=()=>themeHost||root.host||surface;
   const css=document.createElement('style');css.textContent=`
     :host{display:block;height:100%;color:var(--pulse-foreground);font:13px/1.5 var(--pulse-font,-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif);font-variant-numeric:tabular-nums}
     *{box-sizing:border-box}button,select{font:inherit;color:inherit}button{cursor:pointer}button,select{border:1px solid var(--pulse-border);background:transparent;border-radius:7px}button{transition:background 140ms ease,transform 120ms cubic-bezier(.23,1,.32,1)}button:active{transform:scale(.97)}button:focus-visible,select:focus-visible{outline:2px solid var(--pulse-accent);outline-offset:3px}button[disabled]{opacity:.35;cursor:default}
@@ -25,6 +57,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     .chart-controls{display:flex;gap:10px;align-items:center}.range{display:flex;align-items:center;gap:10px}.range button{height:26px;width:26px;border:0}.range strong{font-size:12px;font-weight:500;min-width:106px;text-align:center}.legend{display:flex;flex-wrap:wrap;gap:3px 12px;margin:0 0 10px;max-height:46px;overflow-y:auto;padding-right:4px}.legend button{display:flex;align-items:center;gap:5px;padding:2px 0;border:0;border-radius:3px;background:transparent;font-size:11px;line-height:1.35;color:var(--pulse-muted)}.legend button:hover,.legend button[aria-pressed=true]{color:var(--pulse-foreground)}.legend button[aria-pressed=false]{opacity:.35;text-decoration:line-through}
     .chart-wrap{overflow-x:auto;border-bottom:1px solid var(--pulse-separator);padding:9px 0 8px;margin-bottom:10px}.chart{height:168px;display:flex;gap:16px;min-width:650px}.axis{width:42px;flex:none;position:relative;font-size:11px;color:var(--pulse-muted)}.axis span{position:absolute;right:0;transform:translateY(50%)}.plot{position:relative;flex:1;display:flex;align-items:stretch;gap:5px;padding:0 1px}.grid-line{position:absolute;left:0;right:0;border-top:1px solid var(--pulse-separator);opacity:.45;pointer-events:none}.grid-line:first-child{opacity:.85}.bar-column{position:relative;flex:1;min-width:0;display:flex;align-items:flex-end;border:0;border-radius:4px;background:transparent;padding:0;margin-bottom:18px}.bar-column:hover{background:transparent}.bar-column:active{transform:none}.stack{display:flex;flex-direction:column-reverse;width:62%;max-width:30px;margin-inline:auto;gap:0;pointer-events:none;border-radius:4px 4px 0 0;overflow:hidden}.bar-segment{display:block;flex:none;width:100%;min-height:0;border-radius:0;pointer-events:auto;background:var(--model-color);transition:opacity 140ms ease}.plot[data-highlight] .bar-segment:not([data-highlight=true]){opacity:.24}.x-label{position:absolute;top:calc(100% + 5px);left:50%;transform:translateX(-50%);font-size:11px;color:var(--pulse-muted);white-space:nowrap}.empty-bar{height:1px;width:100%;background:var(--pulse-track);border-radius:2px;opacity:.35}.chart-empty{position:absolute;left:0;right:0;top:40%;text-align:center;color:var(--pulse-muted);font-size:12px;pointer-events:none}.chart-summary{font-size:11px;color:var(--pulse-muted);margin:0}.chart-summary strong{color:var(--pulse-foreground);font-weight:500}
     .table-wrap{overflow:visible}.table{width:100%;border-collapse:collapse;text-align:right;font-size:11px;white-space:nowrap}.table th{font-weight:500;color:var(--pulse-muted);padding:6px 10px;border-bottom:0;position:sticky;top:0;z-index:2;background:var(--pulse-background);box-shadow:inset 0 -1px 0 var(--pulse-separator)}.table td{padding:7px 10px;border-bottom:1px solid var(--pulse-separator)}.table td:nth-child(2){font-weight:550}.table tbody tr:hover td{background:color-mix(in srgb,var(--pulse-hover) 55%,transparent)}.table th:first-child,.table td:first-child{text-align:left;padding-left:0}.table td:first-child span{margin-right:7px}.table tr:last-child td{border-bottom:0}
+    .pool-strip{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.pool-strip[hidden]{display:none}.pool-pill{flex:1 1 150px;display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:7px 10px;border:1px solid var(--pulse-separator);border-radius:8px;background:color-mix(in srgb,var(--pulse-hover) 40%,transparent);font-size:11px}.pool-pill-name{font-weight:550;color:var(--pulse-label)}.pool-pill-val{font-variant-numeric:tabular-nums;color:var(--pulse-foreground);font-weight:600}.pool-pill-meta{margin-left:5px;color:var(--pulse-muted);font-weight:400}
     .footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;padding-top:14px;font-size:11px;color:var(--pulse-muted)}.alert{color:var(--pulse-warning);margin-top:12px;font-size:11px}.tip{position:fixed;z-index:20;max-width:280px;padding:12px 14px;border:1px solid var(--pulse-border);border-radius:9px;background:var(--pulse-menu);box-shadow:0 8px 30px var(--pulse-shadow);color:var(--pulse-foreground);font-size:11px;pointer-events:none}.tip[hidden]{display:none}.tip .tip-title{font-size:11px;color:var(--pulse-muted);margin-bottom:5px}.tip strong{font-size:16px;font-weight:550}.tip-model{display:flex;align-items:center;justify-content:space-between;gap:24px;margin-top:5px;padding:3px 0}.tip-model.dimmed{opacity:.5}.tip-model.active{font-weight:600}.tip-model .dot{margin-right:6px}.model-share{font-size:11px;color:var(--pulse-muted);margin-left:9px}.usage-waiting{display:grid;place-items:center;min-height:260px;color:var(--pulse-muted);font-size:12px}.usage-waiting[hidden]{display:none}
     .year-picker{position:relative;flex:none}.year-trigger{display:flex;align-items:center;justify-content:space-between;gap:14px;min-width:76px;height:30px;padding:0 10px;background:var(--pulse-control);color:var(--pulse-foreground);font-size:11px;border-radius:8px}.year-trigger:hover,.year-trigger[aria-expanded=true]{background:var(--pulse-hover)}.year-chevron{width:12px;height:12px;fill:none;stroke:var(--pulse-muted);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;transition:transform 160ms cubic-bezier(.23,1,.32,1)}.year-trigger[aria-expanded=true] .year-chevron{transform:rotate(180deg)}
     .year-menu{position:fixed;inset:auto;margin:0;padding:5px;width:112px;max-height:232px;overflow-y:auto;border:1px solid var(--pulse-border);border-radius:10px;background:var(--pulse-menu);color:var(--pulse-foreground);box-shadow:0 8px 26px var(--pulse-shadow);transform-origin:top right;opacity:1;transform:scale(1);transition:opacity 140ms ease,transform 160ms cubic-bezier(.23,1,.32,1)}.year-menu::backdrop{background:transparent;pointer-events:none}.year-option{width:100%;border:0;border-radius:6px;padding:7px 9px;display:flex;align-items:center;justify-content:space-between;gap:18px;font-size:12px;text-align:left;background:transparent;color:var(--pulse-foreground);font-variant-numeric:tabular-nums}.year-option:hover,.year-option:focus-visible{background:var(--pulse-hover)}.year-option[aria-selected=true]{background:color-mix(in srgb,var(--pulse-accent) 12%,var(--pulse-menu))}.year-check{color:var(--pulse-accent);width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:0}.year-option[aria-selected=true] .year-check{opacity:1}
@@ -36,15 +69,38 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     @media(max-width:650px){.page-head{padding:14px 16px 0}.page-body{margin-right:2px;padding:0 8px 14px 16px}.tabs-bar{flex-wrap:wrap;gap:8px}.totals{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 0}.metric:first-child{padding-left:0}.metric:nth-child(odd){padding-left:0}.metric:nth-child(3){border-left:0}.value{font-size:19px}.section-head{align-items:flex-start;flex-wrap:wrap}.chart-controls{width:100%;justify-content:space-between}.table-wrap{overflow-x:auto}.footer{align-items:flex-start;flex-direction:column;gap:5px}.selected{align-items:flex-start}.chart{gap:8px}}
     @media(max-width:520px){.intro-bottom{align-items:flex-start}.intro-bottom span{line-height:1.5}}
     @media(prefers-reduced-motion:reduce){button,.year-menu,.year-chevron,.scope-thumb,.totals,#overview,#details{transition:none}button:active{transform:none}}
+    .usage-embed{height:100%;width:100%}
+    .page.embedded{height:100%;display:flex;flex-direction:column;background:var(--pulse-card,var(--pulse-background));border-radius:10px}
+    .page.embedded .page-head{padding:8px 12px 6px;background:var(--pulse-card,var(--pulse-background));border-bottom:1px solid var(--pulse-separator)}
+    .page.embedded .top{align-items:center;gap:8px;min-height:22px}
+    .page.embedded .top h1,.page.embedded #locale,.page.embedded #close{display:none}
+    .page.embedded .tabs-bar{margin-top:6px;border-bottom:0;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+    .page.embedded .tabs-bar[data-hide-tabs="true"]{margin-top:4px;justify-content:flex-start}
+    .page.embedded .tabs-bar[data-hide-tabs="true"] .tabs{display:none}
+    .page.embedded .scope-seg{margin-bottom:0}
+    .page.embedded .page-body{padding:8px 10px 12px 12px;margin-right:0}
+    .page.embedded .totals{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 0;padding:8px 0 10px;margin-bottom:10px}
+    .page.embedded .metric{padding:0 10px}
+    .page.embedded .metric:first-child,.page.embedded .metric:nth-child(odd){padding-left:0}
+    .page.embedded .metric:nth-child(3){border-left:0}
+    .page.embedded .value{font-size:18px}
+    .page.embedded .section-head{align-items:flex-start;flex-wrap:wrap;gap:8px}
+    .page.embedded .chart-controls{width:100%;justify-content:space-between;flex-wrap:wrap;gap:6px}
+    .page.embedded .heat-wrap{padding:2px 2px 6px}
+    .page.embedded .chart{min-width:520px;gap:8px}
+    .page.embedded .chart:has(.chart-empty){min-width:0}
+    .page.embedded .table-wrap{overflow-x:auto}
+    .page.embedded .selected{flex-wrap:wrap;gap:8px;align-items:center}
+    .page.embedded .footer{flex-wrap:wrap;gap:4px 12px;padding-top:10px}
   `;view.append(css);
-  const page=document.createElement('div');page.className='page';
-  setMarkup(page,`<div class="page-head"><header class="top"><div><h1 id="title"></h1><div class="sub"><span class="live-dot"></span><span id="subtitle"></span></div></div><div class="actions"><button id="locale" type="button" aria-label="Language"><span id="locale-label" class="locale-label">中</span></button><button id="refresh" type="button" aria-label="Refresh"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 7a5 5 0 1 0-1.3 4.4M13 3v4H9"/></svg></button><button id="close" type="button" aria-label="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div></header><div class="tabs-bar"><nav class="tabs" role="tablist"><button id="overview-tab" role="tab" aria-controls="overview"></button><button id="details-tab" role="tab" aria-controls="details"></button></nav><div class="seg scope-seg" id="scope-controls" role="group" hidden><i class="scope-thumb" aria-hidden="true"></i><button type="button" data-usage-scope="local"></button><button type="button" data-usage-scope="account"></button></div></div></div><div class="page-body" id="page-body"><div class="totals" id="totals"></div><section id="usage-waiting" class="usage-waiting" role="status" hidden></section><section id="overview" role="tabpanel"><div class="section-head"><div><h2 id="activity-title"></h2><div class="muted" id="heat-sub"></div></div><div class="chart-controls"><div class="seg" id="heat-controls"><button data-heat="day"></button><button data-heat="week"></button></div><div class="year-picker"><button id="year" type="button" class="year-trigger" aria-label="Year" aria-haspopup="listbox" aria-controls="year-menu" aria-expanded="false"><span id="year-label"></span><svg class="year-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><div id="year-menu" class="year-menu" role="listbox" aria-label="Year" popover="manual"></div></div></div></div><div class="heat-wrap"><div class="calendar"><div class="months" id="months"></div><div class="heat-row"><div class="weekdays" id="weekdays"></div><div class="heat" id="heat"></div></div></div></div><div class="heat-footer"><span id="heat-summary"></span><div class="scale"><span id="less"></span><i class="swatch"></i><i class="swatch" data-level="1"></i><i class="swatch" data-level="2"></i><i class="swatch" data-level="3"></i><i class="swatch" data-level="4"></i><span id="more"></span></div></div><div class="selected"><div><div class="title" id="selection-title"></div><span class="muted" id="selection-value"></span></div><button id="selection-details"></button></div></section><section id="details" role="tabpanel" hidden><div class="section-head"><h2 id="detail-title"></h2><div class="chart-controls"><div class="range"><button id="previous" aria-label="Previous">‹</button><strong id="range-label"></strong><button id="next" aria-label="Next">›</button></div><div class="seg" id="period-controls"><button data-period="day"></button><button data-period="week"></button><button data-period="month"></button></div></div></div><div class="legend" id="legend"></div><div class="chart-wrap"><div class="chart"><div class="axis" id="axis"></div><div class="plot" id="plot"></div></div></div><div class="table-wrap"><table class="table"><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div></section><div class="alert" id="alert" hidden></div><footer class="footer"><span id="coverage"></span><span id="timezone"></span></footer></div><div class="tip" id="tip" role="status" hidden></div>`);view.append(page);
+  const page=document.createElement('div');page.className=embedded?'page embedded':'page';
+  setMarkup(page,`<div class="page-head"><header class="top"><div><h1 id="title"></h1><div class="sub"><span class="live-dot"></span><span id="subtitle"></span></div></div><div class="actions"><button id="locale" type="button" aria-label="Language"><span id="locale-label" class="locale-label">中</span></button><button id="refresh" type="button" aria-label="Refresh"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 7a5 5 0 1 0-1.3 4.4M13 3v4H9"/></svg></button><button id="close" type="button" aria-label="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div></header><div class="tabs-bar"${showHeaderTabs?'':' data-hide-tabs="true"'}><nav class="tabs" role="tablist"><button id="overview-tab" role="tab" aria-controls="overview"></button><button id="details-tab" role="tab" aria-controls="details"></button></nav><div class="seg scope-seg" id="scope-controls" role="group" hidden><i class="scope-thumb" aria-hidden="true"></i><button type="button" data-usage-scope="local"></button><button type="button" data-usage-scope="account"></button></div></div></div><div class="page-body" id="page-body"><div class="totals" id="totals"></div><section id="usage-waiting" class="usage-waiting" role="status" hidden></section><section id="overview" role="tabpanel"><div class="section-head"><div><h2 id="activity-title"></h2><div class="muted" id="heat-sub"></div></div><div class="chart-controls"><div class="seg" id="heat-controls"><button data-heat="day"></button><button data-heat="week"></button></div><div class="year-picker"><button id="year" type="button" class="year-trigger" aria-label="Year" aria-haspopup="listbox" aria-controls="year-menu" aria-expanded="false"><span id="year-label"></span><svg class="year-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><div id="year-menu" class="year-menu" role="listbox" aria-label="Year" popover="manual"></div></div></div></div><div class="heat-wrap"><div class="calendar"><div class="months" id="months"></div><div class="heat-row"><div class="weekdays" id="weekdays"></div><div class="heat" id="heat"></div></div></div></div><div class="heat-footer"><span id="heat-summary"></span><div class="scale"><span id="less"></span><i class="swatch"></i><i class="swatch" data-level="1"></i><i class="swatch" data-level="2"></i><i class="swatch" data-level="3"></i><i class="swatch" data-level="4"></i><span id="more"></span></div></div><div class="selected"><div><div class="title" id="selection-title"></div><span class="muted" id="selection-value"></span></div><button id="selection-details"></button></div></section><section id="details" role="tabpanel" hidden><div class="section-head"><h2 id="detail-title"></h2><div class="chart-controls"><div class="range"><button id="previous" aria-label="Previous">‹</button><strong id="range-label"></strong><button id="next" aria-label="Next">›</button></div><div class="seg" id="period-controls"><button data-period="day"></button><button data-period="week"></button><button data-period="month"></button></div></div></div><div class="legend" id="legend"></div><div class="chart-wrap"><div class="chart"><div class="axis" id="axis"></div><div class="plot" id="plot"></div></div></div><div class="pool-strip" id="pool-strip" hidden></div><div class="table-wrap"><table class="table"><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div></section><div class="alert" id="alert" hidden></div><footer class="footer"><span id="coverage"></span><span id="timezone"></span></footer></div><div class="tip" id="tip" role="status" hidden></div>`);view.append(page);
   const intro=document.createElement('section');intro.id='usage-intro';intro.className='usage-intro';intro.hidden=true;intro.setAttribute('aria-labelledby','usage-intro-title');
   setMarkup(intro,'<div class="intro-heading"><span class="intro-mark" aria-hidden="true"><svg viewBox="0 0 16 16"><ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 2 10 2 10 0V4M3 8c0 2 10 2 10 0"/></svg></span><h2 id="usage-intro-title"></h2></div><div class="intro-copy"><p id="usage-intro-history"></p><p id="usage-intro-scope"></p><p id="usage-intro-storage"></p></div><div class="intro-bottom"><span id="usage-intro-error" role="status"></span><button id="usage-intro-done" type="button"></button></div>');
   page.querySelector('#totals').before(intro);
   const $=id=>view.getElementById(id),text=(id,value)=>{if($(id).textContent!==value)$(id).textContent=value;};
   let value=null,tab='overview',heatMode='day',period='day',year=null,anchor=null,selected=null,disabledModels=new Set(),lastKey='',busy=false,opener=null;
-  let disposed=false,refreshMotion=null,refreshDelay=null,finishRefresh=null,accountKey=null,tipTarget=null,tipModel=null;
+  let disposed=false,refreshMotion=null,refreshDelay=null,finishRefresh=null,accountKey=null,tipTarget=null,tipModel=null,pendingScrollHeat=embedded,pendingScrollChart=embedded;
   const scopeCache=new Map();let pendingScope=null,scopeLoading=false,scopeAnimations=[];
   function animateScopeChange(){
     for(const anim of scopeAnimations)anim.cancel();scopeAnimations=[];
@@ -71,7 +127,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
   }
   function dismissGuide(){
     if(disposed)return;const focused=view.activeElement===$('usage-intro-done');guideDismissed=true;renderGuide();
-    if(focused&&dialog.open)$('overview-tab').focus({preventScroll:true});
+    if(focused&&(embedded||dialog?.open))$('overview-tab').focus({preventScroll:true});
   }
   $('usage-intro-done').addEventListener('click',async()=>{
     if(guideSaving||disposed)return;guideSaving=true;guideError=false;renderGuide();
@@ -87,13 +143,40 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     ['model_placeholder_m318','Gemini 3.8 Flash (High)'],
     ['model_placeholder_m319','Gemini 3.8 Flash (Medium)'],
     ['model_placeholder_m320','Gemini 3.8 Flash (Low)'],
+    ['model_placeholder_m532','Gemini 4 Neon (High)'],
+    ['model_placeholder_m533','Gemini 4 Neon (Medium)'],
+    ['model_placeholder_m534','Gemini 4 Neon (Low)'],
+    ['model_placeholder_m535','Gemini 4 Neon (XHigh)'],
+    ['model_placeholder_m427','Gemini 4 Carbon (High)'],
+    ['model_placeholder_m437','Gemini 4 Carbon (Medium)'],
+    ['model_placeholder_m438','Gemini 4 Carbon (Low)'],
+    ['model_placeholder_m417','Gemini 4 Argon (High)'],
+    ['model_placeholder_m418','Gemini 4 Argon (Medium)'],
+    ['model_placeholder_m419','Gemini 4 Argon (Low)'],
+    ['model_placeholder_m525','Gemini 4 Hydrogen (High)'],
+    ['model_placeholder_m526','Gemini 4 Hydrogen (Medium)'],
+    ['model_placeholder_m527','Gemini 4 Hydrogen (Low)'],
+    ['model_placeholder_m528','Gemini 4 Hydrogen (XHigh)'],
+    ['model_placeholder_m537','Orchestrator (Neon)'],
+    ['gemini-pro-orchestrator-neon','Orchestrator (Neon)'],
+    ['model_placeholder_m667','Orchestrator (Carbon)'],
+    ['gemini-pro-orchestrator','Orchestrator (Carbon)'],
+    ['model_placeholder_m681','Orchestrator (Argon)'],
+    ['gemini-pro-orchestrator-argon','Orchestrator (Argon)'],
+    ['model_placeholder_m669','Gemini 4 Hydrogen (Orchestrator)'],
+    ['gemini-flash-worker-agy','Gemini 4 Hydrogen (Orchestrator)'],
+    ['model_placeholder_m18','Gemini 2.5 Pro'],
+    ['model_placeholder_m148','Gemini 2.5 Pro'],
+    ['model_placeholder_m50','Gemini 2.5 Flash'],
+    ['model_placeholder_m198','Gemini 2.5 Flash'],
     ['model_placeholder_m35','Claude Sonnet 4.6 (Thinking)'],
     ['model_placeholder_m26','Claude Opus 4.6 (Thinking)'],
+    ['model_placeholder_m405','Claude Sonnet 5.5 (High)'],
     ['model_openai_gpt_oss_120b_medium','GPT-OSS 120B (Medium)'],
     ['model_google_gemini_internal_byom','Gemini (Internal BYOM)'],
     ['gemini-pro-orchestrator-g1-pro','Orchestrator (Argon)'],
   ]);
-  const EFFORT='n|xhigh|extra-high|extrahigh|extra|high|medium|low|max|thinking';
+  const EFFORT='n|xhigh|extra-high|extrahigh|extra|high|medium|low|max|thinking|orchestrator';
   const capWord=s=>s[0].toUpperCase()+s.slice(1);
   const effortLabel=effort=>{if(!effort||effort==='n')return '';const v=effort.toLowerCase();return v==='xhigh'||v==='extra'||v==='extra-high'||v==='extrahigh'?' (XHigh)':` (${capWord(v)})`;};
   const perplexityName=slug=>{
@@ -116,10 +199,12 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     const norm=candidate.toLowerCase().replace(/@(?:default|\d{8})(?=$|[-_\s()])/g,'').replace(/(\d)[._-](\d)/g,'$1.$2').replace(/[\s()_]+/g,'-').replace(/-+$/,'');
     let m=norm.match(/^gemini-3\.8-flash(?:-(n|high|medium|low|tiered))?$/);
     if(m)return 'Gemini 3.8 Flash'+effortLabel(m[1]);
-    m=norm.match(new RegExp(`^gemini-4-(hydrogen|argon|carbon)(?:-(${EFFORT}))?$`));
-    if(m)return `Gemini 4 ${capWord(m[1])}`+effortLabel(m[2]);
-    m=norm.match(new RegExp(`^orchestrator-argon(?:-(${EFFORT}))?$`));
-    if(m)return 'Orchestrator (Argon)'+effortLabel(m[1]);
+    m=norm.match(/^gemini-2\.5-(pro|flash)(?:-(n|high|medium|low))?$/);
+    if(m)return `Gemini 2.5 ${capWord(m[1])}`+effortLabel(m[2]);
+    m=norm.match(new RegExp(`^gemini-4-(hydrogen|argon|carbon|neon)(?:-(trial))?(?:-(${EFFORT}))?(?:-(trial))?$`));
+    if(m){const trial=m[2]||m[4]?' (Trial)':'';return `Gemini 4 ${capWord(m[1])}`+effortLabel(m[3])+trial;}
+    m=norm.match(new RegExp(`^orchestrator-(argon|carbon|neon)(?:-(${EFFORT}))?$`));
+    if(m)return `Orchestrator (${capWord(m[1])})`+effortLabel(m[2]);
     m=norm.match(new RegExp(`^claude-(sonnet|opus|haiku)-(4\\.5|4\\.6|4\\.7|4\\.8|5\\.5)(?:-\\d{8})?(?:-(${EFFORT}))?(?:-\\d{8})?$`));
     if(m)return `Claude ${capWord(m[1])} ${m[2]}`+effortLabel(m[3]);
     m=norm.match(new RegExp(`^model-claude-(4\\.5|4\\.6|4\\.7|4\\.8|5\\.5)-(sonnet|opus|haiku)(?:-\\d{8})?(?:-(${EFFORT}))?$`));
@@ -135,6 +220,13 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     if(aliased)return aliased;
     if(/^(?:gemini|claude|gpt)-/i.test(candidate))return candidate.replace(/-n$/,'').replace(/^gemini-/i,'Gemini ').replace(/^claude-/i,'Claude ').replace(/^gpt-/i,'GPT ').replace(/-/g,' ');
     return name;
+  };
+  const modelPool=raw=>{
+    const s=String(raw||'')+' '+modelName(String(raw||''));
+    if(/(?:^|[^a-z0-9])(?:local|byok|byom|ollama|lm[-_]?studio|vllm|llama[-_.]?cpp|llamacpp)(?:$|[^a-z0-9])/i.test(s))return 'local';
+    if(/claude|sonnet|opus|haiku|anthropic|gpt|openai|perplexity|fable/i.test(s)||/(?:^|[^a-z0-9])o[134](?:$|[^a-z0-9])/i.test(s)||/^3p(?:$|[-_])/i.test(String(raw||'')))return '3p';
+    if(/gemini|hydrogen|carbon|argon|neon|orchestrator/i.test(s))return 'gemini';
+    return 'other';
   };
   function normalizeUsageData(data){
     if(!data||!Array.isArray(data.days))return data;
@@ -167,7 +259,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     if(!changed&&sameModels)return data;
     return {...data,days,models};
   }
-  const themeSignature=()=>{const s=getComputedStyle(root.host||dialog);return [s.getPropertyValue('--pulse-accent'),s.getPropertyValue('--pulse-background'),s.getPropertyValue('--pulse-font'),root.host?.dataset.pulseTheme].join('|');};
+  const themeSignature=()=>{const t=themeTarget(),s=getComputedStyle(t);return [s.getPropertyValue('--pulse-accent'),s.getPropertyValue('--pulse-background'),s.getPropertyValue('--pulse-font'),t.dataset?.pulseTheme].join('|');};
   let paletteKey='',modelColors=new Map();
   const colorCanvas=document.createElement('canvas');colorCanvas.width=colorCanvas.height=1;
   const colorContext=colorCanvas.getContext('2d',{willReadFrequently:true});
@@ -178,7 +270,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
   const fromHsl=(h,s,l)=>{const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))));};return [f(0),f(8),f(4)];};
   function syncPalette(){
     const models=[...(value?.models||[])].sort(),key=themeSignature()+'|'+models.join('|');if(key===paletteKey)return;paletteKey=key;modelColors.clear();
-    const style=getComputedStyle(root.host||dialog),base=rgb(style.getPropertyValue('--pulse-accent').trim()||'#85a8ff'),background=rgb(style.getPropertyValue('--pulse-background').trim()||'#1c1d1f'),[h,s]=hsl(base);
+    const style=getComputedStyle(themeTarget()),base=rgb(style.getPropertyValue('--pulse-accent').trim()||'#85a8ff'),background=rgb(style.getPropertyValue('--pulse-background').trim()||'#1c1d1f'),[h,s]=hsl(base);
     // An analogous scale stays harmonious as the host accent changes. Tonal
     // variation distinguishes adjacent series without provider brand colors.
     const dark=luminance(background)<.35,offsets=[0,-18,18,-36,36,-9,9,-27,27],tones=dark?[.64,.52,.73,.59,.68]:[.43,.33,.51,.38,.47];
@@ -206,9 +298,9 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     for(const [model,r]of Object.entries(bucket.models).sort((a,b)=>b[1].total-a[1].total)){
       const row=node('div','tip-model'+(activeModel?(activeModel===model?' active':' dimmed'):'')),label=node('span',''),dot=node('i','dot'),amount=node('span','',compact(r.total));dot.style.setProperty('--model-color',color(model));label.append(dot,document.createTextNode(modelName(model)));amount.append(node('span','model-share',bucket.total?(r.total/bucket.total*100).toFixed(1)+'%':'0%'));row.append(label,amount);tip.append(row);
     }
-    tip.hidden=false;const rect=target.getBoundingClientRect(),bounds=dialog.getBoundingClientRect(),r=tip.getBoundingClientRect();
-    tip.style.left=Math.min(bounds.right-r.width-12,Math.max(bounds.left+12,rect.left+rect.width/2-r.width/2))+'px';
-    tip.style.top=Math.max(bounds.top+12,rect.top-r.height-10)+'px';
+    tip.hidden=false;const rect=target.getBoundingClientRect(),bounds=surface.getBoundingClientRect(),r=tip.getBoundingClientRect();
+    tip.style.left=Math.max(bounds.left+8,Math.min(bounds.right-r.width-8,rect.left+rect.width/2-r.width/2))+'px';
+    tip.style.top=Math.max(bounds.top+8,rect.top-r.height-10)+'px';
   }
   const bindBucket=(button,bucket)=>{
     button.setAttribute('aria-label',(bucket.from===bucket.to?bucket.from:bucket.from+' – '+bucket.to)+': '+full(bucket.total)+' Token');
@@ -216,9 +308,18 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     button.addEventListener('pointermove',event=>{const model=event.target.closest?.('.bar-segment')?.dataset.model||null;tooltip(bucket,button,model);});
     button.addEventListener('click',()=>{selected=bucket;anchor=bucket.from;showSelection();});
   };
-  function showSelection(){const bucket=selected||totals(value.today,value.today);text('selection-title',bucket.from===bucket.to?bucket.from:bucket.from+' – '+bucket.to);text('selection-value',full(bucket.total)+' Token · '+w(`${bucket.requests} 次请求`,`${bucket.requests} requests`,`${bucket.requests} 次請求`));}
+  const safeToday=d=>(typeof d?.today==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d.today))?d.today:new Date().toISOString().slice(0,10);
+  const syncDateState=d=>{
+    const todayStr=safeToday(d);
+    if(accountKey&&accountKey!==d?.accountKey){selected=null;disabledModels.clear();year=todayStr.slice(0,4);anchor=todayStr;}
+    else{year||=todayStr.slice(0,4);anchor||=todayStr;}
+    accountKey=d?.accountKey||null;
+    return todayStr;
+  };
+  function showSelection(){const tStr=safeToday(value),bucket=selected||totals(tStr,tStr);text('selection-title',bucket.from===bucket.to?bucket.from:bucket.from+' – '+bucket.to);text('selection-value',full(bucket.total)+' Token · '+w(`${bucket.requests} 次请求`,`${bucket.requests} requests`,`${bucket.requests} 次請求`));}
   function renderHeat(){
     if(!value)return;
+    const todayStr=syncDateState(value);
     const start=week(year+'-01-01'),end=year+'-12-31',weeks=Math.floor((Date.parse(end)-Date.parse(start))/604800000)+1;
     $('heat').replaceChildren();$('months').replaceChildren();$('weekdays').replaceChildren();$('heat').className='heat'+(heatMode==='week'?' week':'');
     $('heat').style.gridTemplateColumns=`repeat(${weeks},minmax(0,1fr))`;
@@ -229,7 +330,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     }
     const max=Math.max(1,...buckets.map(b=>b.total));
     for(const bucket of buckets){
-      const button=node('button','');button.type='button';const future=bucket.from>value.today||bucket.to<year+'-01-01'||bucket.from>year+'-12-31';
+      const button=node('button','');button.type='button';const future=bucket.from>todayStr||bucket.to<year+'-01-01'||bucket.from>year+'-12-31';
       button.dataset.level=bucket.total===0?'0':String(Math.min(4,Math.ceil(bucket.total/max*4)));if(future){button.className='future';button.disabled=true;}
       if(!future)bindBucket(button,bucket);button.tabIndex=-1;$('heat').append(button);
     }
@@ -244,6 +345,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     text('heat-sub',heatMode==='day'?w('每格代表一天','Each square is one day','每格代表一天'):w('每格代表一周 · 周一开始','Each square is one week · starts Monday','每格代表一週 · 週一開始'));
     const annual=totals(year+'-01-01',year+'-12-31');text('heat-summary',w(`${year} 年 · ${full(annual.total)} Token`,`${year} · ${full(annual.total)} tokens`,`${year} 年 · ${full(annual.total)} Token`));
     for(const b of view.querySelectorAll('[data-heat]'))b.setAttribute('aria-pressed',String(b.dataset.heat===heatMode));showSelection();
+    if(pendingScrollHeat){pendingScrollHeat=false;const wrap=view.querySelector('.heat-wrap');const align=()=>{if(!disposed&&wrap&&wrap.scrollWidth>wrap.clientWidth)wrap.scrollLeft=Math.max(0,wrap.scrollWidth-wrap.clientWidth);};align();requestAnimationFrame(align);}
   }
   function highlightModel(model){
     if(model)$('plot').dataset.highlight=model;else delete $('plot').dataset.highlight;
@@ -253,11 +355,12 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
   const chartHeading=node('div','detail-heading');$('detail-title').before(chartHeading);chartHeading.append($('detail-title'),chartSummary);
   function renderChart(){
     if(!value)return;syncPalette();$('tip').hidden=true;highlightModel(null);
+    const todayStr=syncDateState(value);
     const buckets=[];
     if(period==='day'){const start=month(anchor,0),end=add(month(anchor,1),-1);for(let date=start;date<=end;date=add(date,1))buckets.push(totals(date,date,true));text('range-label',start.slice(0,7));}
     else if(period==='week'){const start=add(week(anchor),-11*7);for(let i=0;i<12;i++){const from=add(start,i*7);buckets.push(totals(from,add(from,6),true));}text('range-label',start.slice(5)+' – '+add(week(anchor),6).slice(5));}
     else{for(let i=-11;i<=0;i++){const from=month(anchor,i);buckets.push(totals(from,add(month(from,1),-1),true));}text('range-label',buckets[0].from.slice(0,7)+' – '+month(anchor,0).slice(0,7));}
-    $('next').disabled=period==='week'?week(anchor)>=week(value.today):anchor.slice(0,7)>=value.today.slice(0,7);$('legend').replaceChildren();
+    $('next').disabled=period==='week'?week(anchor)>=week(todayStr):anchor.slice(0,7)>=todayStr.slice(0,7);$('legend').replaceChildren();
     for(const model of value.models){const button=node('button',''),dot=node('i','dot');dot.style.setProperty('--model-color',color(model));button.append(dot,document.createTextNode(modelName(model)));button.type='button';button.setAttribute('aria-pressed',String(!disabledModels.has(model)));button.addEventListener('click',()=>{if(disabledModels.has(model))disabledModels.delete(model);else disabledModels.add(model);renderChart();});button.addEventListener('pointerenter',()=>highlightModel(disabledModels.has(model)?null:model));button.addEventListener('pointerleave',()=>highlightModel(null));$('legend').append(button);}
     const max=Math.max(1,...buckets.map(b=>b.total)),ceiling=max>1?Math.ceil(max/(10**Math.floor(Math.log10(max))))*10**Math.floor(Math.log10(max)):1;
     $('axis').replaceChildren();$('plot').replaceChildren();
@@ -273,13 +376,33 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
       bindBucket(button,bucket);$('plot').append(button);
     }
     if(!buckets.some(b=>b.total))$('plot').append(node('div','chart-empty',w('所选时段暂无用量记录','No usage recorded in this period','所選時段尚無用量記錄')));
-    $('table-head').replaceChildren(...[w('模型','Model','模型'),w('总 Token','Total tokens','總 Token'),w('未缓存输入','Uncached input','未快取輸入'),w('缓存读取','Cache read','快取讀取'),w('缓存写入','Cache write','快取寫入'),w('输出','Output','輸出')].map(label=>node('th','',label)));
+    $('table-head').replaceChildren(...[w('模型','Model','模型'),w('总 Token','Total tokens','總 Token'),w('未缓存输入','Uncached input','未快取輸入'),w('缓存读取','Cache read','快取讀取'),w('缓存命中率','Cache hit','快取命中率'),w('缓存写入','Cache write','快取寫入'),w('输出','Output','輸出')].map(label=>node('th','',label)));
     $('table-body').replaceChildren();const rangeTotals=totals(buckets[0].from,buckets.at(-1).to,true);
-    chartSummary.replaceChildren(node('strong','',compact(rangeTotals.total)+' Token'),document.createTextNode(' · '+w(`${full(rangeTotals.requests)} 次请求`,`${full(rangeTotals.requests)} requests`,`${full(rangeTotals.requests)} 次請求`)));
+    const rangeInput=Object.values(rangeTotals.models).reduce((n,r)=>n+(r.uncached||0)+(r.cacheRead||0)+(r.cacheWrite||0),0);
+    const rangeRead=Object.values(rangeTotals.models).reduce((n,r)=>n+(r.cacheRead||0),0);
+    const rangeHit=rangeInput>0?` · ${w('缓存命中','Cache hit','快取命中')} ${(rangeRead/rangeInput*100).toFixed(1)}%`:'';
+    chartSummary.replaceChildren(node('strong','',compact(rangeTotals.total)+' Token'),document.createTextNode(' · '+w(`${full(rangeTotals.requests)} 次请求`,`${full(rangeTotals.requests)} requests`,`${full(rangeTotals.requests)} 次請求`)+rangeHit));
+    const pools={gemini:{total:0,requests:0},'3p':{total:0,requests:0},local:{total:0,requests:0},other:{total:0,requests:0}};
+    for(const [model,r]of Object.entries(rangeTotals.models)){
+      const pk=modelPool(model);pools[pk].total+=r.total||0;pools[pk].requests+=r.requests||0;
+    }
+    const poolStrip=$('pool-strip');
+    if(poolStrip){
+      const poolNames={gemini:language.t('poolGemini'),'3p':language.t('pool3p'),local:language.t('poolLocal'),other:language.t('poolOther')};
+      const entries=Object.entries(pools).filter(([,v])=>v.total>0||v.requests>0);
+      poolStrip.hidden=!entries.length;
+      poolStrip.replaceChildren(...entries.map(([pk,v])=>{
+        const pill=node('div','pool-pill'),share=rangeTotals.total?` (${(v.total/rangeTotals.total*100).toFixed(0)}%)`:'';
+        const val=node('span','pool-pill-val',compact(v.total));val.append(node('span','pool-pill-meta',`${share} · ${full(v.requests)}`));
+        pill.append(node('span','pool-pill-name',poolNames[pk]||pk),val);return pill;
+      }));
+    }
     for(const [model,r]of Object.entries(rangeTotals.models).sort((a,b)=>b[1].total-a[1].total)){
-      const row=node('tr',''),label=node('td',''),dot=node('span','dot');dot.style.setProperty('--model-color',color(model));label.append(dot,document.createTextNode(modelName(model)));row.append(label,...[r.total,r.uncached,r.cacheRead,r.cacheWrite,r.output].map(n=>node('td','',full(n))));row.addEventListener('pointerenter',()=>highlightModel(model));row.addEventListener('pointerleave',()=>highlightModel(null));$('table-body').append(row);
+      const hitInput=(r.uncached||0)+(r.cacheRead||0)+(r.cacheWrite||0),hitCell=hitInput>0?`${((r.cacheRead||0)/hitInput*100).toFixed(1)}%`:'—';
+      const row=node('tr',''),label=node('td',''),dot=node('span','dot');dot.style.setProperty('--model-color',color(model));label.append(dot,document.createTextNode(modelName(model)));row.append(label,...[r.total,r.uncached,r.cacheRead].map(n=>node('td','',full(n))),node('td','',hitCell),...[r.cacheWrite,r.output].map(n=>node('td','',full(n))));row.addEventListener('pointerenter',()=>highlightModel(model));row.addEventListener('pointerleave',()=>highlightModel(null));$('table-body').append(row);
     }
     for(const b of view.querySelectorAll('[data-period]'))b.setAttribute('aria-pressed',String(b.dataset.period===period));
+    if(pendingScrollChart){pendingScrollChart=false;const wrap=view.querySelector('.chart-wrap');const lastIdx=buckets.findLastIndex(b=>b.total>0);const align=()=>{if(!disposed&&wrap&&wrap.scrollWidth>wrap.clientWidth){wrap.scrollLeft=lastIdx>=Math.floor(buckets.length/2)?Math.max(0,wrap.scrollWidth-wrap.clientWidth):0;}};align();requestAnimationFrame(align);}
   }
   function render(){
     renderGuide();
@@ -293,7 +416,7 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     $('usage-waiting').hidden=true;
     syncPalette();
     const activeScope=pendingScope||(value.scope==='local'?'local':'account');
-    text('title',w('用量统计','Token usage','用量統計'));dialog.setAttribute('aria-label',w('用量统计','Token usage','用量統計'));text('subtitle',activeScope==='local'?w(`本机 ${hostLabel} · 全部流经统计`,`Local ${hostLabel} · all local`,`本機 ${hostLabel} · 本機全部`):w(`本机 ${hostLabel} · 当前账号`,`Local ${hostLabel} · current account`,`本機 ${hostLabel} · 目前帳號`));
+    text('title',w('用量统计','Token usage','用量統計'));dialog?.setAttribute('aria-label',w('用量统计','Token usage','用量統計'));text('subtitle',activeScope==='local'?w(`本机 ${hostLabel} · 全部流经统计`,`Local ${hostLabel} · all local`,`本機 ${hostLabel} · 本機全部`):w(`本机 ${hostLabel} · 当前账号`,`Local ${hostLabel} · current account`,`本機 ${hostLabel} · 目前帳號`));
     const scopeControls=$('scope-controls');if(scopeControls){
       const hideControls=typeof onScope!=='function';
       if(scopeControls.hidden!==hideControls)scopeControls.hidden=hideControls;
@@ -310,35 +433,37 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
       text('overview-tab',w('概览','Overview','概覽'));text('details-tab',w('详情','Details','詳細資料'));
       closeYear(false);$('tip').hidden=true;$('overview').hidden=true;$('details').hidden=true;$('usage-waiting').hidden=false;
       text('usage-waiting',w('当前未检测到登录账号，可切换到「本机全部」查看统计，或在 Antigravity 登录后重试。','No signed-in account detected. Switch to All local or sign in to view account usage.','目前未偵測到登入帳號，可切換至「本機全部」檢視統計，或於 Antigravity 登入後重試。'));
-      languagePicker.update();for(const [id,label]of [['locale',language.t('language')],['refresh',w('刷新用量','Refresh usage','重新整理用量')],['close',w('关闭','Close','關閉')]]){$(id).setAttribute('aria-label',label);$(id).title=label;}
+      languagePicker?.update();for(const [id,label]of [['locale',language.t('language')],['refresh',w('刷新用量','Refresh usage','重新整理用量')],['close',w('关闭','Close','關閉')]]){$(id).setAttribute('aria-label',label);$(id).title=label;}
       for(const metric of $('totals').children){metric.title='';metric.querySelector('.value')?.replaceChildren(node('span','','—'));}
       text('coverage','');text('timezone','');$('alert').hidden=true;return;
     }
     text('overview-tab',w('活动概览','Activity','活動總覽'));text('details-tab',w('用量详情','Usage details','用量詳細資料'));text('activity-title',w('Token 活动','Token activity','Token 活動'));text('detail-title',w('按模型统计','Usage by model','依模型統計'));
-    languagePicker.update();for(const [id,label]of [['locale',language.t('language')],['refresh',w('刷新用量','Refresh usage','重新整理用量')],['close',w('关闭','Close','關閉')]]){$(id).setAttribute('aria-label',label);$(id).title=label;}text('less',w('少','Less','少'));text('more',w('多','More','多'));text('selection-details',w('查看明细','View breakdown','檢視明細'));
+    languagePicker?.update();for(const [id,label]of [['locale',language.t('language')],['refresh',w('刷新用量','Refresh usage','重新整理用量')],['close',w('关闭','Close','關閉')]]){$(id).setAttribute('aria-label',label);$(id).title=label;}text('less',w('少','Less','少'));text('more',w('多','More','多'));text('selection-details',w('查看明细','View breakdown','檢視明細'));
     for(const b of view.querySelectorAll('[data-heat]'))b.textContent=b.dataset.heat==='day'?w('每天','Daily','每日'):w('每周','Weekly','每週');
     for(const b of view.querySelectorAll('[data-period]'))b.textContent=({day:w('天','Day','日'),week:w('周','Week','週'),month:w('月','Month','月')})[b.dataset.period];
     $('overview-tab').setAttribute('aria-selected',String(tab==='overview'));$('details-tab').setAttribute('aria-selected',String(tab==='details'));$('overview').hidden=tab!=='overview';$('details').hidden=tab!=='details';
     $('totals').replaceChildren();for(const [label,total]of [[w('今日用量','Today','今日用量'),value.todayTokens],[w('本周用量','This week','本週用量'),value.weekTokens],[w('本月用量','This month','本月用量'),value.monthTokens],[w('累计用量','All time','累積用量'),value.totalTokens]]){
       const metric=node('div','metric'),n=node('div','value',compact(total));n.append(node('span','unit','Token'));metric.append(node('label','',label),n);metric.title=full(total)+' Token';$('totals').append(metric);
     }
-    const years=[];const first=Number(value.firstDate?.slice(0,4)||value.today.slice(0,4)),currentYear=Number(value.today.slice(0,4)),minimum=Math.max(first,currentYear-10);for(let y=currentYear;y>=minimum;y--)years.push(y);
+    const todayStr=syncDateState(value);
+    const years=[];const first=Number(value.firstDate?.slice(0,4)||todayStr.slice(0,4)),currentYear=Number(todayStr.slice(0,4)),minimum=Math.max(first,currentYear-10);for(let y=currentYear;y>=minimum;y--)years.push(y);
     if($('year').dataset.years!==years.join(',')){
       $('year-menu').replaceChildren(...years.map(y=>{const option=node('button','year-option');option.type='button';option.dataset.year=String(y);option.setAttribute('role','option');option.tabIndex=-1;
         setMarkup(option,'<span></span><svg class="year-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg>');option.firstElementChild.textContent=String(y);
-        option.addEventListener('click',()=>{year=String(y);syncYear();closeYear();renderHeat();});return option;}));$('year').dataset.years=years.join(',');
+        option.addEventListener('click',()=>{year=String(y);pendingScrollHeat=embedded;syncYear();closeYear();renderHeat();});return option;}));$('year').dataset.years=years.join(',');
     }
     syncYear();
     text('coverage',w(`已记录 ${full(value.requests)} 次请求${value.firstDate?' · 始于 '+value.firstDate:''}`,`${full(value.requests)} requests recorded${value.firstDate?' · since '+value.firstDate:''}`,`已記錄 ${full(value.requests)} 次請求${value.firstDate?' · 起始於 '+value.firstDate:''}`));
     text('timezone',value.timeZone+' · '+(value.syncing||value.retryingConversations>0?w('正在同步历史…','Syncing history…','正在同步歷程記錄…'):w('本地统计','Local usage','本機統計')));
     const alerts=[];if(value.unknownRequests)alerts.push(w(`${value.unknownRequests} 次请求日期未知，共 ${compact(value.unknownTokens)} Token`,`${value.unknownRequests} undated requests · ${compact(value.unknownTokens)} tokens`,`${value.unknownRequests} 次請求日期未知，共 ${compact(value.unknownTokens)} Token`));
     const confirmedMissing=value.confirmedMissingConversations??(value.syncing?0:value.missingConversations);
-    if(value.partialRequests||value.unreadableFiles||confirmedMissing>0&&!value.syncing||value.persistenceError)alerts.push(w('部分记录暂不可读取，用量可能不完整','Some records are unavailable; usage may be incomplete','部分記錄暫無法讀取，用量可能不完整'));
+    if(value.unreadableFiles||confirmedMissing>0&&!value.syncing||value.persistenceError)alerts.push(w('部分记录暂不可读取，用量可能不完整','Some records are unavailable; usage may be incomplete','部分記錄暫無法讀取，用量可能不完整'));
+    if(value.partialRequests>0)alerts.push(w(`${full(value.partialRequests)} 次请求缺少部分 Token 字段`,`${full(value.partialRequests)} requests missing a token field`,`${full(value.partialRequests)} 次請求缺少部分 Token 欄位`));
     $('alert').hidden=!alerts.length;text('alert',alerts.join(' · '));
     if(tab==='overview')renderHeat();else renderChart();
   }
-  function changeTab(next){closeYear(false);tab=next;$('tip').hidden=true;$('page-body').scrollTop=0;render();}
-  $('overview-tab').addEventListener('click',()=>changeTab('overview'));$('details-tab').addEventListener('click',()=>changeTab('details'));
+  function changeTab(next,notify=false){if(!['overview','details'].includes(next))return;closeYear(false);tab=next;pendingScrollHeat=embedded&&next==='overview';pendingScrollChart=embedded&&next==='details';$('tip').hidden=true;$('page-body').scrollTop=0;if(isActive()||!embedded)render();if(notify&&typeof onTabChange==='function')onTabChange(next);}
+  $('overview-tab').addEventListener('click',()=>changeTab('overview',true));$('details-tab').addEventListener('click',()=>changeTab('details',true));
   for(const button of view.querySelectorAll('[data-usage-scope]'))button.addEventListener('click',()=>{
     if(disposed||!onScope)return;
     const next=button.dataset.usageScope,currentScope=pendingScope||(value?.scope==='local'?'local':'account');
@@ -346,26 +471,25 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     pendingScope=next;
     const cached=scopeCache.get(next);
     if(cached){
-      if(accountKey&&accountKey!==cached.accountKey){selected=null;disabledModels.clear();year=cached.today.slice(0,4);anchor=cached.today;}
-      accountKey=cached.accountKey;rawValue=cached;value=cached;scopeLoading=false;delete page.dataset.scopeLoading;lastKey=contentKey(cached);render();animateScopeChange();
+      syncDateState(cached);rawValue=cached;value=cached;scopeLoading=false;delete page.dataset.scopeLoading;lastKey=contentKey(cached);render();animateScopeChange();
     }else{
       scopeLoading=true;page.dataset.scopeLoading='true';render();
     }
     void Promise.resolve(onScope(next)).then(()=>{
-      if(!disposed&&pendingScope===next){pendingScope=null;scopeLoading=false;delete page.dataset.scopeLoading;if(dialog.open)render();}
+      if(!disposed&&pendingScope===next){pendingScope=null;scopeLoading=false;delete page.dataset.scopeLoading;if(isActive())render();}
     },()=>{
-      if(!disposed&&pendingScope===next){pendingScope=null;scopeLoading=false;delete page.dataset.scopeLoading;if(dialog.open)render();}
+      if(!disposed&&pendingScope===next){pendingScope=null;scopeLoading=false;delete page.dataset.scopeLoading;if(isActive())render();}
     });
   });
-  for(const b of view.querySelectorAll('[data-heat]'))b.addEventListener('click',()=>{heatMode=b.dataset.heat;renderHeat();});
-  for(const b of view.querySelectorAll('[data-period]'))b.addEventListener('click',()=>{period=b.dataset.period;renderChart();});
+  for(const b of view.querySelectorAll('[data-heat]'))b.addEventListener('click',()=>{heatMode=b.dataset.heat;pendingScrollHeat=embedded;renderHeat();});
+  for(const b of view.querySelectorAll('[data-period]'))b.addEventListener('click',()=>{period=b.dataset.period;pendingScrollChart=embedded;renderChart();});
   function syncYear(){
     text('year-label',String(year));$('year').setAttribute('aria-label',w('选择年份','Select year','選取年份')+' · '+year);$('year-menu').setAttribute('aria-label',w('年份','Year','年份'));
     for(const option of $('year-menu').children)option.setAttribute('aria-selected',String(option.dataset.year===String(year)));
   }
   function closeYear(restore=true){if(!$('year-menu').matches(':popover-open'))return;$('year-menu').hidePopover();$('year').setAttribute('aria-expanded','false');if(restore)$('year').focus({preventScroll:true});}
   function positionYear(){
-    if(!$('year-menu').matches(':popover-open'))return;const menu=$('year-menu'),r=$('year').getBoundingClientRect(),bounds=dialog.getBoundingClientRect(),width=menu.offsetWidth,height=menu.offsetHeight;
+    if(!$('year-menu').matches(':popover-open'))return;const menu=$('year-menu'),r=$('year').getBoundingClientRect(),bounds=surface.getBoundingClientRect(),width=menu.offsetWidth,height=menu.offsetHeight;
     menu.style.left=Math.max(bounds.left+12,Math.min(r.right-width,bounds.right-width-12))+'px';const below=r.bottom+7;
     menu.style.top=(below+height<=bounds.bottom-12?below:Math.max(bounds.top+12,r.top-height-7))+'px';
   }
@@ -389,9 +513,9 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     let next=event.key==='Home'?buttons.findIndex(b=>!b.disabled):event.key==='End'?buttons.findLastIndex(b=>!b.disabled):index+(delta[event.key]??NaN);
     if(!Number.isFinite(next)||next<0||next>=buttons.length||buttons[next].disabled)return;event.preventDefault();event.target.tabIndex=-1;buttons[next].tabIndex=0;buttons[next].focus();
   });
-  $('selection-details').addEventListener('click',()=>{anchor=(selected?.from||value.today);period=heatMode;changeTab('details');});
+  $('selection-details').addEventListener('click',()=>{anchor=(selected?.from||safeToday(value));period=heatMode;changeTab('details',true);});
   for(const [id,step]of [['previous',-1],['next',1]])$(id).addEventListener('click',()=>{anchor=period==='day'?month(anchor,step):period==='week'?add(anchor,step*84):month(anchor,step*12);renderChart();});
-  const languagePicker=language.mountLanguagePicker({button:$('locale'),label:$('locale-label'),parent:dialog,choose:onLanguage});
+  const languagePicker=embedded?null:language.mountLanguagePicker({button:$('locale'),label:$('locale-label'),parent:dialog,choose:onLanguage});
   $('refresh').addEventListener('click',async()=>{
     if(busy||disposed)return;busy=true;const button=$('refresh'),turn=600,started=performance.now();button.disabled=true;button.setAttribute('aria-busy','true');
     refreshMotion=button.querySelector('svg').animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],{duration:turn,iterations:Infinity});
@@ -411,17 +535,17 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
   // popover keeps the same backdrop without touching every background node.
   // Contain pointer, focus, Tab, Escape and scrolling explicitly instead.
   function present(){
-    if(dialog.matches(':popover-open'))return;
+    if(embedded||dialog.matches(':popover-open'))return;
     dialog.removeAttribute('open');dialog.showPopover();dialog.setAttribute('open','');
     $('locale').focus({preventScroll:true});
   }
   function conceal(){
-    if(dialog.matches(':popover-open'))dialog.hidePopover();dialog.removeAttribute('open');
+    if(!embedded&&dialog.matches(':popover-open'))dialog.hidePopover();
+    dialog?.removeAttribute('open');
   }
-  function close(){languagePicker.close(false);closeYear(false);conceal();$('tip').hidden=true;opener?.focus({preventScroll:true});}
-  $('close').addEventListener('click',close);dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();}});
-  const contentKey=data=>JSON.stringify([{...data,updatedAt:undefined},language.language,themeSignature(),typeof onScope==='function',pendingScope,scopeLoading]);
-  const within=event=>event.composedPath().includes(dialog);
+  function close(){languagePicker?.close(false);closeYear(false);if(!embedded)conceal();$('tip').hidden=true;opener?.focus({preventScroll:true});}
+  const contentKey=data=>JSON.stringify([{...(data||{}),updatedAt:undefined},language.language,themeSignature(),typeof onScope==='function',pendingScope,scopeLoading]);
+  const within=event=>event.composedPath().includes(surface);
   function containFocus(event){if(!disposed&&dialog.open&&!within(event)){$('locale').focus({preventScroll:true});}}
   function containKeys(event){
     if(disposed||!dialog.open)return;
@@ -446,38 +570,44 @@ module.exports = function createUsageDashboard({root,language,setMarkup,hostLabe
     const backdropHit=event.composedPath()[0]===dialog;
     if(!within(event)||backdropHit&&(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)){event.preventDefault();event.stopImmediatePropagation();if(event.type==='click')close();}
   }
-  document.addEventListener('focusin',containFocus,true);document.addEventListener('keydown',containKeys,true);
-  document.addEventListener('wheel',containScroll,{capture:true,passive:false});document.addEventListener('touchmove',containScroll,{capture:true,passive:false});
-  for(const type of ['pointerdown','mousedown','click'])document.addEventListener(type,containPointer,true);
+  if(!embedded){
+    $('close').addEventListener('click',close);dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();}});
+    document.addEventListener('focusin',containFocus,true);document.addEventListener('keydown',containKeys,true);
+    document.addEventListener('wheel',containScroll,{capture:true,passive:false});document.addEventListener('touchmove',containScroll,{capture:true,passive:false});
+    for(const type of ['pointerdown','mousedown','click'])document.addEventListener(type,containPointer,true);
+  }
   // CSS surfaces update immediately; JS model colors must follow in the same
   // theme change, rather than waiting for the next metrics poll.
   let rawValue=null;
-  const themeObserver=new MutationObserver(()=>{if(!disposed&&rawValue&&dialog.open){const key=contentKey(rawValue);if(key!==lastKey){lastKey=key;render();}}});
-  if(root.host)themeObserver.observe(root.host,{attributes:true,attributeFilter:['data-pulse-theme','style']});
+  const themeObserver=new MutationObserver(()=>{if(!disposed&&isActive()){const key=rawValue?contentKey(rawValue):'';if(key!==lastKey||!rawValue){lastKey=key;render();}}});
+  const observedTheme=themeTarget();
+  if(observedTheme)themeObserver.observe(observedTheme,{attributes:true,attributeFilter:['data-pulse-theme','style']});
   return {
     open(raw,trigger){
-      if(!raw||disposed)return;
+      if(disposed)return;
+      if(!raw){if(embedded&&isActive()){rawValue=value=null;lastKey='';render();}return;}
       const data=normalizeUsageData(raw);
       if(data.scope==='local'||data.scope==='account')scopeCache.set(data.scope,data);
       pendingScope=null;scopeLoading=false;delete page.dataset.scopeLoading;
-      accountKey=data.accountKey;rawValue=raw;value=data;opener=trigger;year||=data.today.slice(0,4);anchor||=data.today;lastKey=contentKey(raw);render();present();
+      syncDateState(data);rawValue=raw;value=data;opener=trigger;pendingScrollHeat=embedded&&tab==='overview';pendingScrollChart=embedded&&tab==='details';lastKey=contentKey(raw);render();present();
     },
     update(raw){
       if(disposed)return;
-      if(!raw){if(!value)return;rawValue=value=null;lastKey='';if(dialog.open)render();return;}
+      if(!raw){if(!value)return;rawValue=value=null;lastKey='';if(isActive())render();return;}
       const data=normalizeUsageData(raw);
       if(data.scope==='local'||data.scope==='account')scopeCache.set(data.scope,data);
       if(pendingScope){
         if(data.scope!==pendingScope)return;
         const wasLoading=scopeLoading;
         pendingScope=null;scopeLoading=false;delete page.dataset.scopeLoading;
-        if(accountKey&&accountKey!==data.accountKey){selected=null;disabledModels.clear();year=data.today.slice(0,4);anchor=data.today;}
-        accountKey=data.accountKey;rawValue=raw;value=data;if(!dialog.open)return;lastKey=contentKey(raw);render();
+        syncDateState(data);rawValue=raw;value=data;if(!isActive())return;lastKey=contentKey(raw);render();
         if(wasLoading)animateScopeChange();
         return;
       }
-      if(accountKey&&accountKey!==data.accountKey){selected=null;disabledModels.clear();year=data.today.slice(0,4);anchor=data.today;}accountKey=data.accountKey;rawValue=raw;value=data;if(!dialog.open)return;const key=contentKey(raw);if(key===lastKey)return;lastKey=key;render();
+      syncDateState(data);rawValue=raw;value=data;if(!isActive())return;const key=contentKey(raw);if(key===lastKey)return;lastKey=key;render();
     },
-    restoreModal(){if(!disposed&&dialog.open&&dialog.isConnected&&!dialog.matches(':popover-open')){closeYear(false);present();}},
-    close,syncGuideDismissed(){if(!replayGuide)dismissGuide();},dispose(){disposed=true;languagePicker.dispose();themeObserver.disconnect();clearTimeout(refreshDelay);finishRefresh?.();refreshMotion?.cancel();for(const anim of scopeAnimations)anim.cancel();scopeAnimations=[];closeYear(false);window.removeEventListener('resize',positionYear);document.removeEventListener('focusin',containFocus,true);document.removeEventListener('keydown',containKeys,true);document.removeEventListener('wheel',containScroll,true);document.removeEventListener('touchmove',containScroll,true);for(const type of ['pointerdown','mousedown','click'])document.removeEventListener(type,containPointer,true);conceal();dialog.remove();backdrop.remove();},get isOpen(){return dialog.open;}};
+    setTab(next){changeTab(next,false);},
+    renderIfVisible(){if(!disposed&&isActive()){lastKey=rawValue?contentKey(rawValue):'';render();}},
+    restoreModal(){if(!embedded&&!disposed&&dialog.open&&dialog.isConnected&&!dialog.matches(':popover-open')){closeYear(false);present();}},
+    close,syncGuideDismissed(){if(!replayGuide)dismissGuide();},dispose(){disposed=true;languagePicker?.dispose();themeObserver.disconnect();clearTimeout(refreshDelay);finishRefresh?.();refreshMotion?.cancel();for(const anim of scopeAnimations)anim.cancel();scopeAnimations=[];closeYear(false);window.removeEventListener('resize',positionYear);if(!embedded){document.removeEventListener('focusin',containFocus,true);document.removeEventListener('keydown',containKeys,true);document.removeEventListener('wheel',containScroll,true);document.removeEventListener('touchmove',containScroll,true);for(const type of ['pointerdown','mousedown','click'])document.removeEventListener(type,containPointer,true);conceal();}surface.remove();backdrop?.remove();},get isOpen(){return embedded?isActive():Boolean(dialog?.open);}};
 };

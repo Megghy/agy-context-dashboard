@@ -18,7 +18,7 @@ export function panelAppSource(){
  }
  const format=read('format.mjs').replace(/^export function /gm,'function ');
  if(/^\s*(?:import|export)\b/m.test(app+format))throw Error('Unsupported panel module dependency');
- return `(()=>{'use strict';\n${format}\nconst createI18n=(${factory('i18n')});\nconst createTheme=(${factory('theme')});\nconst createContextLimit=(${factory('context-limit')});\n${app}\n})();`;
+ return `(()=>{'use strict';\n${format}\nconst createI18n=(${factory('i18n')});\nconst createTheme=(${factory('theme')});\nconst createUsageDashboard=(${factory('usage-ui')});\nconst createContextLimit=(${factory('context-limit')});\n${app}\n})();`;
 }
 
 function panelVersion(readManifest){
@@ -41,6 +41,6 @@ export function panelPageSource({readManifest=()=>readFileSync(join(HERE,'../../
   html=html.replace('<span id="panel-name">',`<span id="panel-name" title="Antigrative Dashboard v${release}">`)
    .replace('<span class="version-tag" id="panel-version" hidden></span>',`<span class="version-tag" id="panel-version" title="v${release}">v${release}</span>`);
  }
- const version=createHash('sha256').update(html).update(panelAppSource()).update(readFileSync(join(HERE,'styles.css'))).update(readFileSync(join(HERE,'../../compat/theme.cjs'))).digest('hex').slice(0,16);
+ const version=createHash('sha256').update(html).update(panelAppSource()).update(readFileSync(join(HERE,'styles.css'))).update(readFileSync(join(HERE,'../../compat/theme.cjs'))).update(readFileSync(join(HERE,'../../compat/usage-ui.cjs'))).update(readFileSync(join(HERE,'../../compat/context-limit.cjs'))).digest('hex').slice(0,16);
  return html.replace(assets,(_,attribute,path)=>`${attribute}="/${path}?v=${version}"`).replace('</head>',`<meta name="ag-pulse-panel-assets" content="${version}"></head>`);
 }

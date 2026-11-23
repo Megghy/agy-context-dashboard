@@ -42,11 +42,24 @@ try{
    assert.match(await strip.locator('#five-note').textContent(),lang==='en'?/Account quota/:/账号共享额度/);
    assert.ok((await strip.locator('#active-group-name').textContent()).includes('Claude'),'Quota group comes from child sampled model');
    await page.keyboard.press('Escape');
-   for(const width of [700,500,370,1100]){
-    await page.setViewportSize({width,height:800});await page.waitForTimeout(100);
+   const settleResize=async(width,predicate)=>{
+    await page.setViewportSize({width,height:800});
+    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+    if(predicate)await page.waitForFunction(predicate);
+    else await page.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));
+   };
+   for(const width of [700,500,400,370,1100]){
+    await settleResize(width,width===400
+     ?()=>{const w=document.getElementById('ag-pulse-status-bar');return w?.dataset.layout==='ready'&&w.classList.contains('icons-only');}
+     :width===370
+     ?()=>document.getElementById('ag-pulse-status-bar')?.dataset.layout==='blocked'
+     :width===1100
+     ?()=>{const w=document.getElementById('ag-pulse-status-bar');return w?.dataset.layout==='ready'&&w.dataset.density==='full'&&!w.dataset.motion;}
+     :null);
     const state=await strip.evaluate(e=>{const r=e.getBoundingClientRect();return {state:e.dataset.layout,iconsOnly:e.classList.contains('icons-only'),safe:[...document.querySelectorAll('.protected')].every(b=>{const q=b.getBoundingClientRect();return !(Math.min(q.right,r.right)-Math.max(q.left,r.left)>1&&Math.min(q.bottom,r.bottom)-Math.max(q.top,r.top)>1)})};});
     assert.ok(state.state==='blocked'||state.safe,'Never cover host actions');
-    if(width===370){assert.equal(state.iconsOnly,true);assert.equal(state.state,'ready',JSON.stringify(await strip.evaluate(e=>{const rect=x=>{const r=x.getBoundingClientRect();return [r.x,r.y,r.width,r.height]};return {node:rect(e),badge:rect(document.querySelector('.identity')),row:rect(e.parentElement),bar:rect(e.shadowRoot.querySelector('.bar')),scrollWidth:e.shadowRoot.querySelector('.bar').scrollWidth,controls:[...document.querySelectorAll('.protected')].map(rect)};})));assert.equal(await strip.locator('.chip:visible').count(),3);}
+    if(width===400){assert.equal(state.iconsOnly,true);assert.equal(state.state,'ready');assert.equal(await strip.locator('.chip:visible').count(),4);}
+    if(width===370){assert.equal(state.state,'blocked');assert.equal(await strip.evaluate(e=>e.getBoundingClientRect().width),0);}
     if(width===1100)assert.equal(state.state,'ready');
    }
    // Real host labels wrap at hyphens and its SVGs are allowed to shrink.
@@ -54,7 +67,11 @@ try{
    await page.addStyleTag({content:'.identity{white-space:normal;min-width:0}.identity svg{width:14px;height:14px;flex-shrink:1}'});
    const nativeCases=[];
    for(const width of [1100,700,535,480,370,340,300,320,535,1100]){
-    await page.setViewportSize({width,height:800});await page.waitForTimeout(120);
+    await settleResize(width,(width===300||width===370)
+     ?()=>document.getElementById('ag-pulse-status-bar')?.dataset.layout==='blocked'
+     :width===1100
+     ?()=>{const w=document.getElementById('ag-pulse-status-bar');return w?.dataset.layout==='ready'&&w.dataset.density==='full'&&!w.dataset.motion;}
+     :null);
     const geometry=await strip.evaluate(e=>{
      const badge=document.querySelector('.identity'),label=badge.querySelector('span'),range=document.createRange();range.selectNodeContents(label);
      const lines=new Set([...range.getClientRects()].filter(r=>r.width>0).map(r=>Math.round(r.top)));
@@ -62,7 +79,7 @@ try{
     });
     assert.equal(geometry.lines,1,`Native subagent label wrapped at ${width}: ${JSON.stringify(geometry)}`);
     assert.ok(geometry.iconWidth>=13.5,`Native badge icon shrank at ${width}: ${JSON.stringify(geometry)}`);
-    if(width===300){assert.equal(geometry.layout,'blocked');assert.equal(geometry.stripWidth,0,'Hidden strip must release native flex space');}
+    if(width===300||width===370){assert.equal(geometry.layout,'blocked');assert.equal(geometry.stripWidth,0,'Hidden strip must release native flex space');}
     if(width===370){
      await mkdir(join(repo,'.data','issue6'),{recursive:true});
      await page.locator('.composer').screenshot({path:join(repo,'.data','issue6',`native-badge-fixed-${lang}.png`)});

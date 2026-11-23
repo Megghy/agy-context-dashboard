@@ -15,7 +15,7 @@ module.exports = function installAgPulseIpc(electron, authorities) {
     try {
       const origin=new URL(event.senderFrame?.url||event.sender.getURL());
       if(!['127.0.0.1','localhost','[::1]'].includes(origin.hostname)||!['http:','https:'].includes(origin.protocol))throw new Error('Invalid preference origin');
-      if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['language','usageScope','speedStyle','quotaDisplay','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preference input');
+      if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!['language','usageScope','speedStyle','quotaDisplay','hostUiLocalization','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preference input');
       if(!preferenceStore){
         const file=path.join(os.homedir(),'.gemini','config','plugins','antigravity-pulse','compat','preferences.mjs');
         preferenceStore=import(require('node:url').pathToFileURL(file).href).then(({PreferencesStore})=>new PreferencesStore());
@@ -64,6 +64,7 @@ module.exports = function installAgPulseIpc(electron, authorities) {
     if(input.conversationId)url.searchParams.set('conversationId',input.conversationId);
     if(input.force===true)url.searchParams.set('force','1');
     if(input.quotaRefresh===true)url.searchParams.set('quotaRefresh','1');
+    if(input.contextDetail===true)url.searchParams.set('contextDetail','1');
     if(input.usageOnly===true)url.searchParams.set('usageOnly','1');
     if(input.usageScope==='local'||input.usageScope==='account')url.searchParams.set('usageScope',input.usageScope);
     return await new Promise(resolve=>{

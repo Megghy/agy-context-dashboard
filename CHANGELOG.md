@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.8 — 2026-11-22
+
+- **Context Composition, Compaction Trend, Session Audit & Global Insights (`sidecars/panel/{composition.mjs,audit.mjs,pricing.mjs,insights.mjs,insights-worker.mjs}`, `compat/inline-widget.cjs`, `sidecars/panel/app.js`, [`#29`](https://github.com/wycocoyu/agy-context-dashboard/issues/29), [`#34`](https://github.com/wycocoyu/agy-context-dashboard/issues/34)):**
+  - Promote **Daily/Weekly Activity** and **Usage by Model** as top-level tabs ahead of **Session** and **Insights** in the detail view and remove the redundant `#quota-overview` strip above Session sub-tabs.
+  - Add dual-mode context composition (`List` / `Bar`) with host custom-injection breakdown, compaction/checkpoint request trend chart, Session Audit modal (`Files`, `Commands`, `Steps`), public-pricing USD cost estimates + Prompt/Flow credits, and cross-session Global Insights (`Last 7 days`, 112-day activity heatmap, project/skill/tool/command distributions).
+  - Detach V8 `SlicedString`s in `TrajectoryJson` (`sidecars/panel/trajectory-json.mjs`) and offload large JSON-only usage ledgers to the disk worker (`sidecars/panel/usage.mjs`) under the 192 MiB sidecar heap cap.
+- **2.34.0 Multi-Agent Quota Rollup, Tool Bloat & TPS Accuracy (`sidecars/panel/{swarm.mjs,metrics.mjs,rate-quality.mjs,task-usage.mjs}`, `compat/inline-widget.cjs`, [`#16`](https://github.com/wycocoyu/agy-context-dashboard/issues/16), [`#24`](https://github.com/wycocoyu/agy-context-dashboard/issues/24), [`#27`](https://github.com/wycocoyu/agy-context-dashboard/issues/27)):**
+  - Split inline and panel quota/context hero cards, track multi-agent quota pool rollups (`roleCoordinator` / `roleWorker` / `roleMonitor`), count zero-cache full misses (`cacheMissSurges`), and surface heavy tool payload warnings (`>= 20K` / `>= 50K`).
+  - Align streaming TPS numerators strictly with `streamingDuration` (`#24`), tighten short-window outlier quarantine, and polish quota card spacing and sibling rows (`#27`).
+- **Usage Ledger Reliability, Per-Model Cache Hit Column & Hero Pill Label (`sidecars/panel/{usage.mjs,local-conversations.mjs}`, `compat/{usage-ui.cjs,i18n.cjs,inline-widget.cjs}`, `sidecars/panel/{index.html,styles.css}`, [`#44`](https://github.com/wycocoyu/agy-context-dashboard/issues/44)):**
+  - Eliminate false `部分记录暂不可读取` partial/WAL-retry warnings across empty metadata, SQLite WAL retries, and complete non-allowlisted providers, add a **Cache hit** (`cachedTokens / totalInput`) column in **Usage by Model**, and display an explicit localized prefix (`Cache hit rate:` / `缓存命中率：` / `快取命中率：`) inside both cache-rate pills without breaking narrow layouts.
+- **Opt-In Lossless Host UI Chinese Localization & Launcher Parity (`compat/{host-i18n.cjs,host-i18n-dict.json}`, `compat/desktop_launcher.py`, `manage.py`, [`#28`](https://github.com/wycocoyu/agy-context-dashboard/issues/28), [`#30`](https://github.com/wycocoyu/agy-context-dashboard/issues/30), [`#43`](https://github.com/wycocoyu/agy-context-dashboard/issues/43)):**
+  - Add restart-free host Simplified Chinese UI translation powered by community dictionaries with a quick header toggle (`汉`) and persisted preference, plus `--restart` alias and macOS launcher self-healing.
+
 ## 0.9.7 — 2026-11-20
 
 - **Non-intrusive update availability badges (`sidecars/panel/updater.mjs`, `sidecars/panel/main.mjs`, `compat/inline-widget.cjs`, `compat/update-ui.cjs`, [`#32`](https://github.com/wycocoyu/agy-context-dashboard/issues/32)):**

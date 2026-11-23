@@ -35,7 +35,7 @@ def checked_assets(root, tag):
             archive.getinfo(prefix + required)
         for required in IDE_RUNTIME_MODULES:
             archive.getinfo(prefix + required)
-        for required in ['compat/usage-ui.cjs', 'compat/context-limit.cjs', 'sidecars/panel/rate-quality.mjs', 'sidecars/panel/usage.mjs']:
+        for required in ['compat/usage-ui.cjs', 'compat/host-i18n.cjs', 'compat/host-i18n-dict.json', 'compat/context-limit.cjs', 'sidecars/panel/rate-quality.mjs', 'sidecars/panel/usage.mjs']:
             archive.getinfo(prefix + required)
         for required in LARGE_CONVERSATION_MODULES:
             archive.getinfo(prefix + required)
@@ -43,7 +43,7 @@ def checked_assets(root, tag):
         archive.getinfo(prefix + 'sidecars/panel/trajectory-json.mjs')
         archive.getinfo(prefix + 'sidecars/panel/trajectory-reader.mjs')
         archive.getinfo(prefix + 'sidecars/panel/transcript.mjs')
-        for required in ['delegation.mjs', 'task-usage.mjs', 'delegated-usage.mjs']:
+        for required in ['delegation.mjs', 'swarm.mjs', 'task-usage.mjs', 'delegated-usage.mjs', 'composition.mjs', 'pricing.mjs', 'audit.mjs', 'insights.mjs', 'insights-worker.mjs']:
             archive.getinfo(prefix + 'sidecars/panel/' + required)
         for required in ['compat/update-ui.cjs', 'compat/update-worker.py', 'compat/update-lock.py',
                          'sidecars/panel/updater.mjs', 'sidecars/panel/local-conversations.mjs', 'docs/UPDATES.md']:
@@ -67,14 +67,14 @@ def checked_assets(root, tag):
             archive.getinfo(name)
         for name in IDE_RUNTIME_MODULES:
             archive.getinfo('extension/' + name)
-        for name in ['compat/usage-ui.cjs', 'compat/context-limit.cjs', 'sidecars/panel/rate-quality.mjs', 'sidecars/panel/usage.mjs']:
+        for name in ['compat/usage-ui.cjs', 'compat/host-i18n.cjs', 'compat/host-i18n-dict.json', 'compat/context-limit.cjs', 'sidecars/panel/rate-quality.mjs', 'sidecars/panel/usage.mjs']:
             archive.getinfo('extension/' + name)
         for name in LARGE_CONVERSATION_MODULES:
             archive.getinfo('extension/' + name)
         archive.getinfo('extension/sidecars/panel/trajectory-json.mjs')
         archive.getinfo('extension/sidecars/panel/trajectory-reader.mjs')
         archive.getinfo('extension/sidecars/panel/transcript.mjs')
-        for required in ['delegation.mjs', 'task-usage.mjs', 'delegated-usage.mjs']:
+        for required in ['delegation.mjs', 'swarm.mjs', 'task-usage.mjs', 'delegated-usage.mjs', 'composition.mjs', 'pricing.mjs', 'audit.mjs']:
             archive.getinfo('extension/sidecars/panel/' + required)
         archive.getinfo('extension/sidecars/panel/local-conversations.mjs')
     return [bundle, checksum, ide, ide_checksum]

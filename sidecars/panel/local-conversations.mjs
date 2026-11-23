@@ -7,7 +7,7 @@ export const conversationId=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const digest=value=>createHash('sha256').update(value).digest('hex');
 async function statInfo(file,directory=false){
  try{const s=await lstat(file,{bigint:true});if(s.isSymbolicLink()||!(directory?s.isDirectory():s.isFile()))return null;
-  return {token:[s.size,s.mtimeNs,s.ctimeNs,s.ino].map(String).join(':'),mtimeMs:Number(s.mtimeNs/1000000n)};
+  return {size:s.size,token:[s.size,s.mtimeNs,s.ctimeNs,s.ino].map(String).join(':'),mtimeMs:Number(s.mtimeNs/1000000n)};
  }catch(e){if(e.code==='ENOENT'||e.code==='ENOTDIR')return null;throw e;}
 }
 const stamp=async(file,directory=false)=>(await statInfo(file,directory))?.token??null;
@@ -41,7 +41,8 @@ export async function discoverLocalConversations({host,home=homedir(),limit=2000
     values.push([directory?'brain':'db',info.token]);
     if(!directory){
      modifiedAtMs=modifiedAtMs===null?info.mtimeMs:Math.max(modifiedAtMs,info.mtimeMs);
-     const wal=await statInfo(file+'-wal');
+     const walInfo=await statInfo(file+'-wal');
+     const wal=walInfo&&walInfo.size>0n?walInfo:null;
      values.push(['wal',wal?.token??null]);
      if(wal)modifiedAtMs=Math.max(modifiedAtMs,wal.mtimeMs);
     }

@@ -258,3 +258,33 @@ test('discoverLocalConversations preserves signatures, filters unlisted brain-on
  assert.equal(journal[key(bothId)].state,'complete');
  assert.equal(journal[key(freshId)].state,'retry');
 });
+
+test('zero-byte sqlite WAL side effects during read do not trigger false history-changed retries',async t=>{
+ const {home,ledger}=await setup(t);
+ const appBase=join(home,'.gemini','antigravity');
+ await mkdir(join(appBase,'conversations'),{recursive:true});
+ const dbPath=join(appBase,'conversations',id+'.db');
+ const walPath=join(appBase,'conversations',id+'.db-wal');
+ await writeFile(dbPath,'settled');
+ const oldTime=new Date(Date.now()-120000);
+ await utimes(dbPath,oldTime,oldTime);
+ const store={
+  identity:account,
+  epoch:1,
+  listConversations:async()=>[{id,status:'CASCADE_RUN_STATUS_IDLE',modifiedAt:'2026-10-15T00:00:00Z',stepCount:2}],
+  client:{
+   trajectory:async()=>{
+    await writeFile(walPath,'');
+    return raw(2);
+   },
+  },
+ };
+ const usage=new DesktopUsage(store,ledger,{host:'app',discoverLocal:()=>discoverLocalConversations({home,host:'app'}),continueDelay:0,sliceMs:Infinity});
+ t.after(()=>usage.dispose());
+ await usage.sync(true);
+ while(usage.pending||usage.continuation)await delay(5);
+ assert.equal(usage.confirmedMissingConversations,0);
+ const journal=await ledger.backfillState(account,'app');
+ assert.equal(journal[key(id)].state,'complete');
+ assert.equal((await ledger.summary(account)).requests,2);
+});

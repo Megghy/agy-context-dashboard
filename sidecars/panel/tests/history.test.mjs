@@ -99,15 +99,15 @@ test('legacy rates are masked offline, then fully recalculated without dropping 
   bad.stepIndices=[0];bad.chatModel.streamingDuration='0.349271s';
   bad.chatModel.timeToFirstToken='106s';bad.chatModel.usage.responseOutputTokens='17776';bad.chatModel.usage.outputTokens='17776';
   good.trajectory.steps=[{type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE',plannerResponse:{toolCalls:[{}]}}];
-  const fresh=trajectoryMetrics(good),legacy={...fresh,tps:7600,latestTps:50894,measuredRequests:2};
+  const fresh=trajectoryMetrics(good),legacy={...fresh,tps:7600,latestTps:50894,e2eTps:1200,ttftMedianSeconds:1.5,latestTtftSeconds:1.5,measuredRequests:2};
   delete legacy.rateVersion;delete legacy.latestRateStatus;
   await history.save(a,id,legacy);
   const offline=await new MetricsStore(client(async()=>{throw Error('offline');}),{history}).snapshot({conversationId:id});
-  assert.equal(offline.speed.tps,null);assert.equal(offline.speed.peakTps,null);assert.deepEqual(offline.speed.recentTps,[]);assert.equal(offline.speed.latestRateStatus,'legacy');assert.equal(offline.speed.counts.output,17876);
+  assert.equal(offline.speed.tps,null);assert.equal(offline.speed.e2eTps,null);assert.equal(offline.speed.peakTps,null);assert.equal(offline.speed.ttftMedianSeconds,null);assert.equal(offline.speed.latestTtftSeconds,null);assert.deepEqual(offline.speed.recentTps,[]);assert.equal(offline.speed.latestRateStatus,'legacy');assert.equal(offline.speed.counts.output,17876);
   const fixed=await new MetricsStore(client(async()=>good),{history}).snapshot({conversationId:id});
   assert.equal(fixed.speed.tps,50);assert.equal(fixed.speed.peakTps,50);assert.deepEqual(fixed.speed.recentTps,[50]);assert.equal(fixed.speed.excludedTiming,1);assert.equal(fixed.speed.measuredRequests,1);
   assert.equal(fixed.speed.cache.outputTokens,17876);assert.equal(fixed.speed.restoredFromHistory,false);
-  const saved=await history.load(a,id);assert.equal(saved.metrics.rateVersion,2);assert.equal(saved.metrics.tps,50);
+  const saved=await history.load(a,id);assert.equal(saved.metrics.rateVersion,3);assert.equal(saved.metrics.tps,50);
 });
 
 test('same coverage quality correction with fewer eligible samples replaces saved rates',async t=>{
@@ -116,4 +116,22 @@ test('same coverage quality correction with fewer eligible samples replaces save
   assert.equal((await history.load(a,id)).metrics.tps,40);
   const incomplete={...fresh,complete:false,tps:1};await history.save(a,id,incomplete);
   assert.equal((await history.load(a,id)).metrics.tps,40);
+});
+
+test('modelBreakdown, cacheMissSurges, toolSummary, and sessionMeta survive safeMetrics and SessionHistory',async t=>{
+  const {history}=await fixture(t),a=scope('b@example.test');
+  const m=trajectoryMetrics({trajectory:{cascadeId:id,
+    steps:[{type:'CORTEX_STEP_TYPE_GENERIC',metadata:{toolCall:{name:'run_command',argumentsJson:'{"cmd":"echo hi"}'},toolSource:'CORTEX_COMPONENT_SOURCE_BUILTIN'}}],
+    generatorMetadata:[
+      {chatModel:{model:'MODEL_PLACEHOLDER_M537',streamingDuration:'2s',usage:{responseId:'p1',inputTokens:'120000',cacheReadTokens:'0',outputTokens:'400',responseOutputTokens:'100',thinkingOutputTokens:'300',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}}},
+      {chatModel:{model:'MODEL_PLACEHOLDER_M669',streamingDuration:'1s',usage:{responseId:'e1',inputTokens:'2000',cacheReadTokens:'50000',outputTokens:'200',responseOutputTokens:'200',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}}},
+    ]}});
+  await history.save(a,id,{...m,sessionMeta:{agentRole:'sidecar',isSubagent:false,isSidecar:true}});
+  const loaded=(await history.load(a,id)).metrics;
+  assert.equal(loaded.modelBreakdown.length,2);
+  assert.equal(loaded.cacheMissSurges,1);
+  assert.equal(loaded.cacheMissSurgeTokens,120000);
+  assert.equal(loaded.toolSummary.tools[0].name,'run_command');
+  assert.equal(loaded.sessionMeta.agentRole,'sidecar');
+  assert.equal(loaded.sessionMeta.isSidecar,true);
 });

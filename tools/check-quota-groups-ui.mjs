@@ -48,7 +48,7 @@ try{
  for(const mode of ['panel','inline','ide']){
   reset();const page=await browser.newPage({viewport:{width:1000,height:800}});page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base+'/'+mode);
-  await page.locator('[data-card="context"]').first().click();
+  await page.locator(mode==='panel'?'[data-card="context"]':'[data-card="quota"]').first().click();
   const scope=mode!=='panel'?page.locator('#ag-pulse-status-bar'):page.locator('.widget');
   const refresh=async()=>{if(mode!=='panel')await page.locator('[data-testid="model-selector-trigger"]').evaluate((e,value)=>e.textContent=value,model);if(mode==='panel')await scope.locator('#refresh-button').click();else await scope.evaluate(el=>el.shadowRoot.querySelector('.refresh').click());};
   const balance=scope.locator('#week-balance'),five=scope.locator(mode==='panel'?'#five-details':'#five-quota-section');
@@ -59,22 +59,25 @@ try{
   assert.equal(await scope.locator('#week-pace-tick').count(),0,'The time-pace tick should not exist');
   assert.equal(await scope.locator('#five-projected-fill').count(),0,'The hatched five-hour forecast segment was removed');
   assert.equal(await scope.locator('#week-projected-fill').count(),0,'The hatched weekly forecast segment was removed');
-  const accentBg=await scope.locator('#context-fill').evaluate(e=>getComputedStyle(e).backgroundColor);
-  assert.equal(await scope.locator('#week-fill').evaluate(e=>getComputedStyle(e).backgroundColor),accentBg,'Forecast exhaustion keeps the solid accent bar color');
+  const [contextBg,quotaAccentBg]=await scope.evaluate(el=>{const host=el.shadowRoot||el,read=v=>{const p=document.createElement('span');p.style.color=`var(${v})`;host.append(p);const c=getComputedStyle(p).color;p.remove();return c;};return [read('--pulse-context-accent'),read('--pulse-quota-accent')];});
+  assert.equal(await scope.locator('#context-fill').evaluate(e=>getComputedStyle(e).backgroundColor),contextBg,'Context bar uses muted slate-blue context accent');
+  assert.notEqual(contextBg,quotaAccentBg,'Context occupancy and quota balance bars keep distinct luminance');
+  assert.equal(await scope.locator('#week-fill').evaluate(e=>getComputedStyle(e).backgroundColor),quotaAccentBg,'Forecast exhaustion keeps the solid quota accent bar color');
   assert.equal(await scope.locator('#week-forecast').isVisible(),true);
   if(mode==='panel'){
    assert.equal(await scope.locator('#quota-group').inputValue(),'gemini-argon-wtu');
-   assert.equal(await scope.locator('#five-summary').isVisible(),false);
-   assert.equal(await scope.locator('#quota-overview').getAttribute('data-windows'),'1');
+   assert.equal(await scope.locator('#quota-overview,#five-summary,#week-summary').count(),0);
    assert.match(await scope.locator('#panel-group-name').textContent(),/Gemini \(Argon\)/);
    assert.match(await scope.locator('#panel-quota-siblings').textContent(),/Claude/);
+   assert.equal(await scope.locator('#panel-quota-siblings .quota-sibling').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','Collapsed sibling rows default to transparent');
    const sibBg=await scope.locator('#panel-quota-siblings .sibling-bar i').first().evaluate(e=>getComputedStyle(e).backgroundColor);
    assert.notEqual(sibBg,'rgb(89, 101, 117)','Sibling bar uses soft accent blue instead of muted gray');
   }else{
    assert.match(await scope.locator('#active-group-name').textContent(),/Gemini \(Argon\)/);
    assert.match(await scope.locator('#quota-siblings').textContent(),/Claude/);
+   assert.equal(await scope.locator('#quota-siblings .quota-sibling').first().evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','Collapsed sibling rows default to transparent');
    const sibBg=await scope.locator('#quota-siblings .sibling-bar i').first().evaluate(e=>getComputedStyle(e).backgroundColor);
-   assert.ok(sibBg.startsWith('rgba(')||sibBg.startsWith('color(')||sibBg!==accentBg,'Sibling bar uses translucent soft accent tint');
+   assert.ok(sibBg.startsWith('rgba(')||sibBg.startsWith('color(')||sibBg!==quotaAccentBg,'Sibling bar uses translucent soft accent tint');
   }
   groups.reverse();model='Gemini Flash';await refresh();await balance.filter({hasText:'80.0%'}).waitFor();
   assert.equal(await five.isVisible(),true);
@@ -84,7 +87,7 @@ try{
   groups.at(-1).name='Gemini 4 Argon';await refresh();await balance.filter({hasText:'30.0%'}).waitFor();
   assert.equal(await five.isVisible(),false);
   groups.at(-1).windows.weekly.remaining=.15;await refresh();await balance.filter({hasText:'15.0%'}).waitFor();
-  assert.equal(await scope.locator('#week-fill').evaluate(e=>getComputedStyle(e).backgroundColor),accentBg,'Remaining 15% keeps the solid accent bar color');
+  assert.equal(await scope.locator('#week-fill').evaluate(e=>getComputedStyle(e).backgroundColor),quotaAccentBg,'Remaining 15% keeps the solid quota accent bar color');
   groups.at(-1).windows.weekly.remaining=0;await refresh();await balance.filter({hasText:'0.0%'}).waitFor();
   assert.equal(await five.isVisible(),false,'Exhausted weekly quota must not fall back to shared Gemini');
   const dangerBg=await scope.evaluate(el=>{const host=el.shadowRoot||el,probe=document.createElement('span');probe.style.color='var(--pulse-danger)';host.append(probe);const c=getComputedStyle(probe).color;probe.remove();return c;});

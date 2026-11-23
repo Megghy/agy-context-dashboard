@@ -489,3 +489,47 @@ test('active backfill throttles repeated JSON summary scans and refreshes immedi
  assert.equal(after.totalTokens,1800);
  assert.ok(reads>0);
 });
+
+test('large JSON-only ledgers above 64 files or 4MiB offload summary to disk worker without inline parse',async t=>{
+ const {ledger}=await fixture(t),now=Date.parse('2026-10-30T03:00:00Z');
+ let inlineReads=0;ledger.readSummaryRecord=async()=>{inlineReads++;throw Error('Expected large JSON ledger to offload');};
+ for(let i=0;i<65;i++){
+  const name=hash('many-json-'+i);
+  await writeFile(join(ledger.directory,scope,name+'.json'),JSON.stringify({schema:1,account:scope,records:[row('many-row-'+i)]}));
+ }
+ const initial=await ledger.summary(scope,now);
+ assert.equal(initial.summaryStale,true);
+ assert.ok(ledger.diskSummaryPending);
+ await ledger.diskSummaryPending;
+ const settled=await ledger.summary(scope,now);
+ assert.equal(settled.summaryStale,undefined);
+ assert.equal(settled.requests,65);
+ assert.equal(settled.totalTokens,65*600);
+ assert.equal(inlineReads,0);
+
+ const {ledger:bigLedger}=await fixture(t);
+ let bigInlineReads=0;bigLedger.readSummaryRecord=async()=>{bigInlineReads++;throw Error('Expected >4MiB JSON ledger to offload');};
+ const count=15000,bigFile=bigLedger.file(scope,id),handle=await open(bigFile,'w');
+ try{
+  await handle.write('{"schema":1,"account":"'+scope+'","records":[');
+  let chunk='';
+  for(let i=0;i<count;i++){
+   const value={...row('byte-row-'+i,100),model:'Model '+'X'.repeat(110)};
+   chunk+=(i?',':'')+JSON.stringify(value);
+   if(i%128===127){await handle.write(chunk);chunk='';}
+  }
+  if(chunk)await handle.write(chunk);
+  await handle.write(']}');
+ }finally{await handle.close();}
+ assert.ok((await stat(bigFile)).size>4*1024*1024);
+ await writeFile(bigLedger.file(scope,other),JSON.stringify({schema:1,account:scope,records:[{...row('byte-row-0',250),model:'Model '+'X'.repeat(110)},{...row('byte-row-0',50),model:'Model '+'X'.repeat(110)}]}));
+ const bigInitial=await bigLedger.summary(scope,now);
+ assert.equal(bigInitial.summaryStale,true);
+ assert.ok(bigLedger.diskSummaryPending);
+ await bigLedger.diskSummaryPending;
+ const bigSettled=await bigLedger.summary(scope,now);
+ assert.equal(bigSettled.summaryStale,undefined);
+ assert.equal(bigSettled.requests,count);
+ assert.equal(bigSettled.totalTokens,count*600+150);
+ assert.equal(bigInlineReads,0);
+});

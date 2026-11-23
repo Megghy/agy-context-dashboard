@@ -31,8 +31,8 @@ const state=()=>page.evaluate(()=>{
 try{
  await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForTimeout(1300);
  assert.deepEqual(errors,[],'IDE template must work under the host Trusted Types policy');
- let narrow=await state();assert.equal(narrow.id,id);assert.equal(narrow.density,'icons');assert.equal(narrow.layout,'ready');assert.equal(narrow.tps,'166.6');assert.equal(narrow.modelTruncated,false);assert.equal(narrow.icons.filter(e=>!e.hidden&&e.width===24).length,3);
- for(const card of ['speed','cache','context']){await page.locator(`[data-card=${card}]`).click();await page.waitForTimeout(150);assert.ok(await page.locator(`#${card}-card`).isVisible());await page.keyboard.press('Escape');}
+ let narrow=await state();assert.equal(narrow.id,id);assert.equal(narrow.density,'icons');assert.equal(narrow.layout,'ready');assert.equal(narrow.tps,'166.6');assert.equal(narrow.modelTruncated,false);assert.equal(narrow.icons.filter(e=>!e.hidden&&e.width===24).length,4);
+ for(const card of ['speed','cache','quota','context']){await page.locator(`[data-card=${card}]`).click();await page.waitForTimeout(150);assert.ok(await page.locator(`#${card}-card`).isVisible());await page.keyboard.press('Escape');}
  await page.setViewportSize({width:960,height:800});await page.waitForTimeout(400);let wide=await state();assert.equal(wide.density,'full');assert.equal(wide.layout,'ready');assert.equal(wide.modelTruncated,false);
  await page.setViewportSize({width:430,height:800});await page.waitForTimeout(350);assert.equal((await state()).density,'icons');
  await page.setViewportSize({width:245,height:800});await page.waitForTimeout(350);const tiny=await state();assert.equal(tiny.rect.width,0);assert.equal(tiny.layout,'blocked');
@@ -57,7 +57,7 @@ try{
  assert.ok(stable.scroll>0,'Constrained viewport must clip and scroll the card');assert.ok(stable.polls>=2);assert.equal(stable.maxScrollDelta,0);assert.deepEqual(stable.finalRect,stable.rect);assert.deepEqual(stable.changes,[]);assert.equal(stable.open,true);
  await page.keyboard.press('Escape');
  await page.evaluate(()=>{document.querySelector('.top').style.removeProperty('height');});await page.setViewportSize({width:430,height:800});await page.waitForTimeout(200);
- await page.locator('[data-card=context]').click();await page.waitForTimeout(150);
+ await page.locator('[data-card=quota]').click();await page.waitForTimeout(150);
  assert.equal(await page.locator('#active-group-name').textContent(),'Gemini');
  await page.waitForTimeout(3300);assert.ok(await page.locator('#quota-siblings [data-group="3p"]').isVisible());await page.locator('#quota-siblings [data-group="3p"]').click();
  assert.equal(await page.locator('#active-group-name').textContent(),'Claude');
@@ -82,7 +82,7 @@ try{
  // A different child/subagent/history ID must never win over the input owner.
  await page.evaluate(other=>{const decoy={props:{cascadeId:other},__k:[]};testOwner.__k.unshift(decoy);},other);
  assert.equal((await state()).id,id);
- await page.evaluate(()=>{testOwner.props.cascadeId=null;});await page.waitForTimeout(1400);assert.equal((await state()).id,null);assert.equal((await state()).tps,'—');assert.equal((await state()).icons.filter(e=>!e.hidden).length,3);
+ await page.evaluate(()=>{testOwner.props.cascadeId=null;});await page.waitForTimeout(1400);assert.equal((await state()).id,null);assert.equal((await state()).tps,'—');assert.equal((await state()).icons.filter(e=>!e.hidden).length,4);
  assert.equal(await page.locator('#context-summary').textContent(),'尚无请求');assert.equal(await page.locator('#five-balance').textContent(),'80.0%');
  await page.evaluate(other=>{testOwner.props.cascadeId=other;},other);await page.waitForTimeout(1400);assert.equal((await state()).id,other);
  await page.evaluate(()=>{delete document.querySelector('.panel').__k;});await page.waitForTimeout(1400);assert.equal((await state()).id,null);assert.equal((await state()).tps,'—');

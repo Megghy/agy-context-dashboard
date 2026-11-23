@@ -19,7 +19,7 @@ export function quotaModelFamily(value){
   const resolved=raw?usageModelKey(raw):'';
   const s=raw+' '+resolved;
   if(/(?:^|[^a-z])argon(?:$|[^a-z])/i.test(s))return 'gemini-argon';
-  if(/gemini|hydrogen|carbon|orchestrator/i.test(s))return 'gemini';
+  if(/gemini|hydrogen|carbon|neon|orchestrator/i.test(s))return 'gemini';
   if(/claude|sonnet|opus|haiku|anthropic|gpt|openai|perplexity|fable/i.test(s)||/(?:^|[^a-z0-9])o[134](?:$|[^a-z0-9])/i.test(s)||/^3p(?:$|[-_])/i.test(raw.trim()))return '3p';
   return null;
 }
@@ -130,7 +130,7 @@ export function usageRecords(raw,conversationId,{maxRows=Infinity,maxBytes=Infin
     const identity=u.responseId?`response:${u.apiProvider||''}:${u.responseId}`:u.messageId?`message:${u.apiProvider||''}:${u.messageId}`:
       `fallback:${conversationId}:${JSON.stringify(g.stepIndices||[index])}:${at??'undated'}`;
     const row={id:hash(identity),at,model:cleanModel(chat.modelDisplayName||chat.responseModel||u.model||chat.model),
-      uncached,cacheRead:read,cacheWrite:write,output,partial:uncached===null||read===null||write===null||output===null||!cache&&uncached>0,
+      uncached,cacheRead:read,cacheWrite:write,output,partial:uncached===null||read===null||write===null||output===null,
       timeBasis:stamp(chat.chatStartMetadata?.createdAt)!==null?'request-start':at!==null?'planner-created':'unknown'};
     const old=rows.get(row.id);
     if(!old||sum(row)>sum(old)){
@@ -344,13 +344,24 @@ export class UsageLedger{
     const scanRevision=this.revision;
     const bucketNames=allBuckets?await this.listAccountBuckets():[scope];
     if(!isCurrent())return null;
-    const bucketEntries=[];let hasSqlite=false;
+    const bucketEntries=[];let offloadDisk=false,jsonFiles=0,jsonBytes=0;
     for(const b of bucketNames){
       let files=[];try{files=await readdir(join(this.directory,b));}catch(e){if(e.code!=='ENOENT')throw e;}
-      if(files.some(name=>/^[a-f0-9]{64}\.sqlite$/.test(name)))hasSqlite=true;
+      if(files.some(name=>/^[a-f0-9]{64}\.sqlite$/.test(name))){offloadDisk=true;break;}
+      for(const name of files){
+        if(!/^[a-f0-9]{64}\.json$/.test(name))continue;
+        // Large JSON-only ledgers would otherwise spike the 192 MiB sidecar heap.
+        if(++jsonFiles>64){offloadDisk=true;break;}
+        try{
+          const info=await lstat(join(this.directory,b,name));
+          if(!info.isSymbolicLink()&&info.isFile()&&(jsonBytes+=info.size)>4*1024*1024){offloadDisk=true;break;}
+        }catch{}
+      }
+      if(offloadDisk)break;
       bucketEntries.push({dir:b,files});
     }
-    if(hasSqlite){
+    if(!isCurrent())return null;
+    if(offloadDisk){
       this.startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,{buckets:allBuckets?bucketNames:null,quotaAccount,groupInfos,specs});
       return cached?{...finalize(cached.value),summaryStale:true}:unknown();
     }

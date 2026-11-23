@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
+import {execFileSync} from 'node:child_process';
 import {TrajectoryJson} from '../trajectory-json.mjs';
 import {AntigravityClient} from '../client.mjs';
 import {trajectoryMetrics} from '../metrics.mjs';
@@ -54,4 +55,21 @@ test('a real HTTP step page above the old 32 MiB cap restores all metrics withou
  assert.deepEqual(trajectoryMetrics(raw),trajectoryMetrics(record));assert.deepEqual(usageRecords(raw,id),usageRecords(record,id));assert.equal(scans,1);
  assert.equal(trajectoryMetrics(raw).tps,100);assert.equal(trajectoryMetrics(raw).cache.hitRate,.75);
  console.log(JSON.stringify({longConversationRegression:true,wireBytes,retainedBytes:Buffer.byteLength(JSON.stringify(raw)),context:trajectoryMetrics(raw).context.usedTokens,cache:trajectoryMetrics(raw).cache.hitRate}));
+});
+test('retained sliced strings detach large chunk parents and preserve unpaired surrogates',()=>{
+ const mixed='123456789012\\uD800tail';
+ const parsed=project(JSON.stringify({steps:[{type:JSON.parse(`"${mixed}"`)}]}));
+ assert.equal(parsed.trajectory?.steps?.[0]?.type??parsed.steps?.[0]?.type,'123456789012\ud800tail');
+ const modUrl=new URL('../trajectory-json.mjs',import.meta.url).href;
+ const script=`import {TrajectoryJson} from ${JSON.stringify(modUrl)};
+  global.gc();const base=process.memoryUsage().heapUsed;
+  const parser=new TrajectoryJson();parser.write('{"steps":[');
+  for(let i=0;i<160;i++){
+   const chunk=(i?',':'')+'{"type":"CORTEX_STEP_TYPE_PLANNER_'+String(i).padStart(3,'0')+'","payload":"'+'a'.repeat(256*1024)+'"}';
+   parser.write(chunk);
+  }
+  parser.write(']}');const out=parser.end();
+  global.gc();const retained=process.memoryUsage().heapUsed-base;
+  if(out.steps.length!==160||retained>=8*1024*1024)throw new Error('Unexpected heap retention: '+retained);`;
+ execFileSync(process.execPath,['--expose-gc','--input-type=module','-e',script],{stdio:'pipe'});
 });

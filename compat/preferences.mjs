@@ -18,6 +18,13 @@ export function validateAutoRelaunchDebug(value) {
 function storedAutoRelaunchDebug(value) {
   return typeof value==='boolean'?value:undefined;
 }
+export function validateHostUiLocalization(value) {
+  if(typeof value!=='boolean')throw new Error('Invalid host UI localization preference');
+  return value;
+}
+function storedHostUiLocalization(value) {
+  return typeof value==='boolean'?value:undefined;
+}
 export function validateLanguage(value) {
   if (value!=='en'&&value!=='zh-CN'&&value!=='zh-TW') throw new Error('Invalid language preference');
   return value;
@@ -88,29 +95,31 @@ export class PreferencesStore {
       if(value.schema!==1)throw new Error('Invalid preferences schema');
       const usageScope=storedUsageScope(value.usageScope);
       const autoRelaunchDebug=storedAutoRelaunchDebug(value.autoRelaunchDebug);
+      const hostUiLocalization=storedHostUiLocalization(value.hostUiLocalization);
       const contextLimitTokens=storedContextLimitTokens(value.contextLimitTokens);
       const contextLimitOverrides=storedContextLimitOverrides(value.contextLimitOverrides);
-      return {language:value.language===null?null:validateLanguage(value.language),languageGuideDismissed:value.languageGuideDismissed===true,usageGuideDismissed:value.usageGuideDismissed===true,speedStyle:storedSpeedStyle(value.speedStyle),quotaDisplay:storedQuotaDisplay(value.quotaDisplay),...(usageScope?{usageScope}:{}),...(typeof autoRelaunchDebug==='boolean'?{autoRelaunchDebug}:{}),...(contextLimitTokens?{contextLimitTokens}:{}),...(contextLimitOverrides?{contextLimitOverrides}:{}),revision:Number.isSafeInteger(value.revision)&&value.revision>=0?value.revision:0};
+      return {language:value.language===null?null:validateLanguage(value.language),languageGuideDismissed:value.languageGuideDismissed===true,usageGuideDismissed:value.usageGuideDismissed===true,speedStyle:storedSpeedStyle(value.speedStyle),quotaDisplay:storedQuotaDisplay(value.quotaDisplay),...(usageScope?{usageScope}:{}),...(typeof autoRelaunchDebug==='boolean'?{autoRelaunchDebug}:{}),...(typeof hostUiLocalization==='boolean'?{hostUiLocalization}:{}),...(contextLimitTokens?{contextLimitTokens}:{}),...(contextLimitOverrides?{contextLimitOverrides}:{}),revision:Number.isSafeInteger(value.revision)&&value.revision>=0?value.revision:0};
     } catch(error) {
       if(error.code==='ENOENT')return {language:null,languageGuideDismissed:false,usageGuideDismissed:false,speedStyle:null,quotaDisplay:null,revision:0};
       throw new Error('Language preference could not be read');
     }
   }
   async set(input) {
-    if(!input||typeof input!=='object'||Array.isArray(input)||!Object.keys(input).length||Object.keys(input).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','quotaDisplay','usageScope','autoRelaunchDebug','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preferences request');
+    if(!input||typeof input!=='object'||Array.isArray(input)||!Object.keys(input).length||Object.keys(input).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','quotaDisplay','usageScope','autoRelaunchDebug','hostUiLocalization','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preferences request');
     if(Object.hasOwn(input,'language'))validateLanguage(input.language);
     if(Object.hasOwn(input,'speedStyle'))validateSpeedStyle(input.speedStyle);
     if(Object.hasOwn(input,'quotaDisplay'))validateQuotaDisplay(input.quotaDisplay);
     if(Object.hasOwn(input,'usageScope'))validateUsageScope(input.usageScope);
     if(Object.hasOwn(input,'autoRelaunchDebug'))validateAutoRelaunchDebug(input.autoRelaunchDebug);
+    if(Object.hasOwn(input,'hostUiLocalization'))validateHostUiLocalization(input.hostUiLocalization);
     const validatedContextLimit=Object.hasOwn(input,'contextLimitTokens')?validateContextLimitTokens(input.contextLimitTokens):undefined;
     const validatedContextOverrides=Object.hasOwn(input,'contextLimitOverrides')?validateContextLimitOverrides(input.contextLimitOverrides):undefined;
     if(Object.hasOwn(input,'languageGuideDismissed')&&input.languageGuideDismissed!==true)throw new Error('Invalid guide preference');
     if(Object.hasOwn(input,'usageGuideDismissed')&&input.usageGuideDismissed!==true)throw new Error('Invalid usage guide preference');
     const operation=this.queue.then(async()=>{
       await mkdir(dirname(this.file),{recursive:true});
-      let prior=0,previous={language:null,languageGuideDismissed:false,usageGuideDismissed:false,speedStyle:null,quotaDisplay:null,usageScope:undefined,autoRelaunchDebug:undefined,contextLimitTokens:undefined,contextLimitOverrides:undefined};
-      try {const value=JSON.parse((await readFile(this.file,'utf8')).replace(/^\uFEFF/,''));if(Number.isSafeInteger(value.revision))prior=value.revision;previous={language:['en','zh-CN','zh-TW'].includes(value.language)?value.language:null,languageGuideDismissed:value.languageGuideDismissed===true,usageGuideDismissed:value.usageGuideDismissed===true,speedStyle:storedSpeedStyle(value.speedStyle),quotaDisplay:storedQuotaDisplay(value.quotaDisplay),usageScope:storedUsageScope(value.usageScope),autoRelaunchDebug:storedAutoRelaunchDebug(value.autoRelaunchDebug),contextLimitTokens:storedContextLimitTokens(value.contextLimitTokens),contextLimitOverrides:storedContextLimitOverrides(value.contextLimitOverrides)};}catch{}
+      let prior=0,previous={language:null,languageGuideDismissed:false,usageGuideDismissed:false,speedStyle:null,quotaDisplay:null,usageScope:undefined,autoRelaunchDebug:undefined,hostUiLocalization:undefined,contextLimitTokens:undefined,contextLimitOverrides:undefined};
+      try {const value=JSON.parse((await readFile(this.file,'utf8')).replace(/^\uFEFF/,''));if(Number.isSafeInteger(value.revision))prior=value.revision;previous={language:['en','zh-CN','zh-TW'].includes(value.language)?value.language:null,languageGuideDismissed:value.languageGuideDismissed===true,usageGuideDismissed:value.usageGuideDismissed===true,speedStyle:storedSpeedStyle(value.speedStyle),quotaDisplay:storedQuotaDisplay(value.quotaDisplay),usageScope:storedUsageScope(value.usageScope),autoRelaunchDebug:storedAutoRelaunchDebug(value.autoRelaunchDebug),hostUiLocalization:storedHostUiLocalization(value.hostUiLocalization),contextLimitTokens:storedContextLimitTokens(value.contextLimitTokens),contextLimitOverrides:storedContextLimitOverrides(value.contextLimitOverrides)};}catch{}
       const language=Object.hasOwn(input,'language')?input.language:previous.language;
       const languageGuideDismissed=previous.languageGuideDismissed||Object.hasOwn(input,'language')||input.languageGuideDismissed===true;
       const usageGuideDismissed=previous.usageGuideDismissed||input.usageGuideDismissed===true;
@@ -118,17 +127,18 @@ export class PreferencesStore {
       const quotaDisplay=Object.hasOwn(input,'quotaDisplay')?input.quotaDisplay:previous.quotaDisplay;
       const usageScope=Object.hasOwn(input,'usageScope')?input.usageScope:previous.usageScope;
       const autoRelaunchDebug=Object.hasOwn(input,'autoRelaunchDebug')?input.autoRelaunchDebug:previous.autoRelaunchDebug;
+      const hostUiLocalization=Object.hasOwn(input,'hostUiLocalization')?input.hostUiLocalization:previous.hostUiLocalization;
       const contextLimitTokens=Object.hasOwn(input,'contextLimitTokens')?(validatedContextLimit??undefined):previous.contextLimitTokens;
       const contextLimitOverrides=Object.hasOwn(input,'contextLimitOverrides')?(validatedContextOverrides??undefined):previous.contextLimitOverrides;
       const revision=Math.max(Date.now(),prior+1);
       const temporary=this.file+'.'+process.pid+'.'+randomUUID()+'.tmp';
       try {
         const handle=await open(temporary,'wx',0o600);
-        try {await handle.writeFile(JSON.stringify({schema:1,language,languageGuideDismissed,usageGuideDismissed,speedStyle,quotaDisplay,...(usageScope?{usageScope}:{}),...(typeof autoRelaunchDebug==='boolean'?{autoRelaunchDebug}:{}),...(contextLimitTokens?{contextLimitTokens}:{}),...(contextLimitOverrides?{contextLimitOverrides}:{}),revision})+'\n','utf8');await handle.sync();}
+        try {await handle.writeFile(JSON.stringify({schema:1,language,languageGuideDismissed,usageGuideDismissed,speedStyle,quotaDisplay,...(usageScope?{usageScope}:{}),...(typeof autoRelaunchDebug==='boolean'?{autoRelaunchDebug}:{}),...(typeof hostUiLocalization==='boolean'?{hostUiLocalization}:{}),...(contextLimitTokens?{contextLimitTokens}:{}),...(contextLimitOverrides?{contextLimitOverrides}:{}),revision})+'\n','utf8');await handle.sync();}
         finally {await handle.close();}
         await rename(temporary,this.file);
       } finally {await rm(temporary,{force:true});}
-      return {language,languageGuideDismissed,usageGuideDismissed,speedStyle,quotaDisplay,...(usageScope?{usageScope}:{}),...(typeof autoRelaunchDebug==='boolean'?{autoRelaunchDebug}:{}),...(contextLimitTokens?{contextLimitTokens}:{}),...(contextLimitOverrides?{contextLimitOverrides}:{}),revision};
+      return {language,languageGuideDismissed,usageGuideDismissed,speedStyle,quotaDisplay,...(usageScope?{usageScope}:{}),...(typeof autoRelaunchDebug==='boolean'?{autoRelaunchDebug}:{}),...(typeof hostUiLocalization==='boolean'?{hostUiLocalization}:{}),...(contextLimitTokens?{contextLimitTokens}:{}),...(contextLimitOverrides?{contextLimitOverrides}:{}),revision};
     });
     this.queue=operation.catch(()=>{});
     return operation;
