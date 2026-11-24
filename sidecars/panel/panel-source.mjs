@@ -13,7 +13,7 @@ export function panelAppSource(){
   return source.slice(index+prefix.length).trim().replace(/;$/,'');
  };
  let app=read('app.js');
- for(const line of ["import { percent, rate, count, elapsed, countdown, resetDate } from './format.mjs';","import { createI18n } from './i18n.js';","import { createTheme } from './theme.js';","import { createContextLimit } from './context-limit.js';"]){
+ for(const line of ["import { percent, rate, count, smallCount, elapsed, countdown, resetDate } from './format.mjs';","import { createI18n } from './i18n.js';","import { createTheme } from './theme.js';","import { createContextLimit } from './context-limit.js';"]){
   if(!app.includes(line))throw Error('Panel dependency list changed');app=app.replace(line,'');
  }
  const format=read('format.mjs').replace(/^export function /gm,'function ');

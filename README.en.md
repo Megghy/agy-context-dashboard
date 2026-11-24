@@ -7,14 +7,21 @@
 DSH-style Antigravity (`agy`) context composition, token throughput, cache hit rate, quota pace, and global insights dashboard beside the model selector and inside the companion Side Panel.<br>
 Keep the summary visible. Hover or switch tabs for full details.
 
-[![Version 0.9.8](https://img.shields.io/badge/version-0.9.8-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
+[![Version 0.9.9](https://img.shields.io/badge/version-0.9.9-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
 [![Platforms](https://img.shields.io/badge/host-Windows%20%7C%20Linux%20%7C%20macOS-83d8b9?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
 [![Antigravity 2.21.1 / 2.33.0+ / 2.34.0+](https://img.shields.io/badge/Antigravity-2.21.1%20%2F%202.33.0%2B%20%2F%202.34.0%2B-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
+[![Languages](https://img.shields.io/badge/languages-English%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-f2b880?style=flat-square&labelColor=252936)](#language)
 [![MIT](https://img.shields.io/badge/license-MIT-d4d9e6?style=flat-square&labelColor=252936)](LICENSE)
 
 [Preview](#preview) · [IDE](#antigravity-ide) · [CLI](#antigravity-cli-status-line) · [Install](#install) · [Enable or remove](#plug-and-unplug) · [Companion Sidebar](#companion-sidebar) · [Host UI Chinese & Acknowledgements](#host-ui-chinese-and-acknowledgements) · [Compatibility](#compatibility) · [FAQ](#faq) · [中文](README.md)
 
 </div>
+
+> [!TIP]
+> **Chinese & One-Click Host UI Localization Supported**
+>
+> - **One-click non-invasive Host UI Chinese (`汉` toggle)**: Click `汉` in the Side Panel header or enable **Host UI Chinese** in the Context card to translate the Antigravity Desktop host UI into Simplified Chinese live—no `app.asar` patching or restart needed, and turning it off restores exact upstream English ([details](#host-ui-chinese-and-acknowledgements)).
+> - **Dashboard UI in `English / 简体中文 / 繁體中文`**: Supported across the inline strip, hover cards, Side Panel, usage views, CLI status line, and standalone IDE, with persistent language selection.
 
 > [!IMPORTANT]
 > **Antigravity Desktop `2.33.0+` / `2.34.0+` Compatibility, Startup & Post-Update Auto-Injection Note (`v0.9.6`, [`#19`](https://github.com/wycocoyu/agy-context-dashboard/issues/19), [`#17`](https://github.com/wycocoyu/agy-context-dashboard/issues/17))**
@@ -23,6 +30,8 @@ Keep the summary visible. Hover or switch tabs for full details.
 > - **Why `2.33.0+` drops the debugging port**: Starting in Antigravity `2.33.0`, `--remote-debugging-port` is CLI opt-in only and `<profile>/DevToolsActivePort` is deleted when absent; in-app updates (`quitAndInstall()`) also drop CLI flags on restart; and `app.asar` is sealed by `ElectronAsarIntegrity` and Hardened Runtime signing, so this plugin leaves `app.asar` untouched.
 > - **Dual recovery in `v0.9.5+` (shortcut self-healing + default-on `autoRelaunchDebug`)**: On Windows (`.lnk`) and Linux (`.desktop`), the dashboard syncs debug flags into user-owned desktop shortcuts automatically; on macOS Dock launches and after in-app `quitAndInstall()` restarts without flags, **`autoRelaunchDebug` stays enabled by default (opt-out)** and triggers only during the **first 20s of sidecar startup** (max 1 auto-relaunch per sidecar, guarded by a **60s sliding window allowing up to 2 distinct-PID relaunches at least 5s apart** plus same-PID dedupe).
 > - **Zero-relaunch launcher & opt-out control**: Use the generated debug launcher (`manage.py install --with-launcher`: `~/Applications/Antigravity (Debug).app` on macOS, `%LOCALAPPDATA%\AntigravityPulse\Launch Antigravity (Debug).cmd` on Windows, `~/.local/share/applications/antigravity-pulse-debug.desktop` on Linux) to start with zero extra restarts, or uncheck **Auto-relaunch when debug port is missing** in the official Side Panel (**+ → Extensions → Antigrative Dashboard**) to persist `autoRelaunchDebug: false`.
+
+**v0.9.9:** Maintenance fixes ([`#46`](https://github.com/wycocoyu/agy-context-dashboard/issues/46), [`#50`](https://github.com/wycocoyu/agy-context-dashboard/pull/50), [`#52`](https://github.com/wycocoyu/agy-context-dashboard/issues/52), [`#55`](https://github.com/wycocoyu/agy-context-dashboard/pull/55)): fall back past macOS GUI minimal `PATH` (`/usr/bin/python3` 3.9.6) to Homebrew (`python3` and `3.14`–`3.10`) and Python.org Framework binaries during in-app update checks, discover OneDrive / Registry-redirected Windows Desktop `.lnk` shortcuts, log relaunch worker outcomes, and apply a 10-minute auto-relaunch backoff after failures. Retains all `v0.9.8` context composition & global insights, `v0.9.7` update availability badges, `v0.9.6` `2.34.0+` daemon credentials, `v0.9.5` `autoRelaunchDebug`, `v0.9.2` debug launchers, `IDE 2.6.0`, `Gemini 4` / `GPT-6.1 Sol` / `Claude 4.5–5.5`, macOS `language_server.native` discovery, and `agy 1.5.x` CLI features. [Release notes](https://github.com/wycocoyu/agy-context-dashboard/releases/tag/v0.9.9) · [Changelog](CHANGELOG.md).
 
 **v0.9.8:** Introduce the **context composition, session audit & global insights workspace** ([`#16`](https://github.com/wycocoyu/agy-context-dashboard/issues/16), [`#24`](https://github.com/wycocoyu/agy-context-dashboard/issues/24), [`#29`](https://github.com/wycocoyu/agy-context-dashboard/issues/29), [`#34`](https://github.com/wycocoyu/agy-context-dashboard/issues/34), [`#43`](https://github.com/wycocoyu/agy-context-dashboard/issues/43), [`#44`](https://github.com/wycocoyu/agy-context-dashboard/issues/44)): place **Daily/Weekly Activity** and **Usage by Model** first alongside **Session** and **Insights**, add dual-mode host context breakdown, compaction/checkpoint trends, Session Audit (`Files`, `Commands`, `Steps`), public-pricing USD cost estimates, `2.34.0` multi-agent quota rollups + `cacheMissSurges`, opt-in lossless host Simplified Chinese UI, a per-model **Cache hit** column, explicit localized `Cache hit rate:` / `缓存命中率：` hero pills, zero false partial/WAL-retry usage warnings, and 192 MiB ledger heap protection. Retains `v0.9.7` update availability badges, `v0.9.6` `2.34.0+` daemon credential compatibility, `v0.9.5` default-on `autoRelaunchDebug` recovery, `v0.9.2` debug launchers, `Gemini 4` / `GPT-6.1 Sol` / `Claude 4.5–5.5`, macOS `language_server.native` discovery, and `agy 1.5.x` CLI features. [Release notes](https://github.com/wycocoyu/agy-context-dashboard/releases/tag/v0.9.8) · [Changelog](CHANGELOG.md).
 
@@ -66,7 +75,7 @@ Keep the summary visible. Hover or switch tabs for full details.
 
 - **Token usage, DSH-style.** Compact total tokens and an explicit **Cache hit rate:** hero pill (`缓存命中率：` / `快取命中率：`); hover for uncached input, cache reads, output, optional cache writes, and zero-cache miss surge counts (`cacheMissSurges`).
 - **Split quota pace & 8-category context breakdown.** Hover the quota ring for five-hour/weekly balances, reset timers, exhaustion pace forecasts, and sibling groups; hover Context for latest-request occupancy, host 8-category composition (`List`/`Bar`), compaction/checkpoint trends, and Host UI Chinese / language controls.
-- **English or Chinese.** English by default, with one-click switching and a saved preference.
+- **English, Simplified Chinese & Traditional Chinese.** English by default, with one-click switching across `English / 简体中文 / 繁體中文` (saved across restarts) plus opt-in live Host UI Simplified Chinese (`汉`).
 - **Language survives restarts.** The inline widget and side panel share an atomic user preference file (`AntigravityPulse/preferences.json`), independent of the host's changing local port.
 - **Hover delay and instant transition.** First hover waits 250ms to prevent accidental popups; clicks and keyboard focus open immediately. Moving between metrics stays instant while a card is open or for 350ms after leaving the controls. Leaving early or replacing the conversation/composer cancels a pending popup.
 - **Stable menus.** Quota-group menus stay open across polling cycles while countdowns continue ticking.
@@ -84,7 +93,7 @@ Keep the summary visible. Hover or switch tabs for full details.
 ## Antigravity IDE
 
 **v0.7.0** adds a separate VSIX for Google's own standalone IDE. Download
-`antigrative-dashboard-ide-0.9.8.vsix` from the release and choose **Install from VSIX…**
+`antigrative-dashboard-ide-0.9.9.vsix` from the release and choose **Install from VSIX…**
 in the IDE's Extensions view. No desktop App installation is required.
 
 Fully quit the IDE, then start it with
@@ -228,6 +237,9 @@ The stable internal plugin ID remains `antigravity-pulse` for compatibility with
 
 | Metric | Definition |
 | --- | --- |
+| Conversation turns | Count of `USER_INPUT` steps across the full trajectory |
+| Trajectory steps | Total step records across the paginated trajectory (user inputs, model replies, tools, commands, compactions/checkpoints) |
+| Model requests | Deduplicated generator calls (a single turn with tool follow-ups triggers multiple requests and steps) |
 | Context window | Latest request-start `estimatedTokensUsed` / `maxContextTokens`; unknown capacity stays unavailable |
 | Cache hit | Cached-read tokens divided by uncached input + cache reads + cache writes; token-weighted across requests |
 | Token total | Normalized total input plus output tokens, including thinking output |
@@ -369,7 +381,7 @@ Open **context details → bottom-right Check for updates**. The App-only update
 
 ---
 
-> **Community Continuation Fork:** This repository (**`agy-context-dashboard`**) continues maintaining **Antigrative Dashboard** (`antigravity-pulse`) under the original [MIT License](LICENSE) starting from `v0.8.12`, after the original upstream repository (`YOU-SHOULD-KNOW-ME/antigrative-dashboard`) went offline (404). Existing user settings, `history-v1`, `usage-v1`, and IDE storage identities remain unchanged.
+> **Fork & Independent Design Notice:** This repository (**`wycocoyu/agy-context-dashboard`**) is a fork of the original author's repository [`ATtacK030130/antigrative-dashboard`](https://github.com/ATtacK030130/antigrative-dashboard). Starting from the `v0.8.12` baseline under the original [MIT License](LICENSE), it has diverged in design and is now developed independently from the upstream repository, while preserving original copyright attribution as well as compatibility with existing user settings, `history-v1`, `usage-v1`, and IDE storage paths.
 >
 > **Companion Sidebar Plugin:** If you also want multi-select `Group By` (such as `Status + Requirement`) and a decoupled **Inbox / Follow-up / Snooze / 24h Auto-retire** workflow in Antigravity's left conversation sidebar, check out [`wycocoyu/agy-project-sidebar`](https://github.com/wycocoyu/agy-project-sidebar). It uses the same non-invasive Sidecar + CDP architecture and coexists cleanly alongside this dashboard.
 

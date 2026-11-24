@@ -7,14 +7,21 @@
 参考 DSH 设计的 Antigravity (`agy`) 上下文构成、Token 速率、缓存命中率、共享额度与全局洞察仪表盘；悬停胶囊展开精细统计，右侧边栏四视图一站式管理每日/每周活动、按模型用量、当前会话与全局洞察。<br>
 缩略信息常驻；鼠标悬停，才展开详细统计。
 
-[![Version 0.9.8](https://img.shields.io/badge/version-0.9.8-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
+[![Version 0.9.9](https://img.shields.io/badge/version-0.9.9-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
 [![Platforms](https://img.shields.io/badge/host-Windows%20%7C%20Linux%20%7C%20macOS-83d8b9?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
 [![Antigravity 2.21.1 / 2.33.0+ / 2.34.0+](https://img.shields.io/badge/Antigravity-2.21.1%20%2F%202.33.0%2B%20%2F%202.34.0%2B-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
+[![Languages](https://img.shields.io/badge/languages-English%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-f2b880?style=flat-square&labelColor=252936)](#语言与缓存)
 [![MIT](https://img.shields.io/badge/license-MIT-d4d9e6?style=flat-square&labelColor=252936)](LICENSE)
 
 [看看效果](#看看效果) · [IDE](#antigravity-ide) · [CLI](#antigravity-cli-状态栏) · [开始安装](#安装) · [启用与停用](#可插拔) · [配套侧边栏](#配套侧边栏) · [宿主汉化与致谢](#宿主界面汉化与开源致谢) · [兼容性](#兼容性) · [常见问题](#常见问题) · [English](README.en.md)
 
 </div>
+
+> [!TIP]
+> **已支持中文与一键宿主汉化（插件三语言 + Antigravity 宿主界面简体中文）**
+>
+> - **支持宿主界面一键汉化（`汉` 按钮）**：在侧边栏顶部点击 `汉` 或在上下文详情底部开启「宿主界面汉化」，即可无侵入实时汉化 Antigravity 桌面端界面，无需修改 `app.asar` 或重启客户端，关闭开关即无损还原英文（[详细说明](#宿主界面汉化与开源致谢)）。
+> - **插件自身支持 `English / 简体中文 / 繁體中文`**：内嵌状态栏、悬浮卡、右侧边栏、用量窗口、CLI 状态栏与独立 IDE 均已适配，可在上下文详情或侧边栏菜单一键切换并跨重启保存。
 
 > [!IMPORTANT]
 > **Antigravity Desktop `2.33.0+` / `2.34.0+` 兼容、启动与更新后自动注入说明（`v0.9.6`，[`#19`](https://github.com/wycocoyu/agy-context-dashboard/issues/19)、[`#17`](https://github.com/wycocoyu/agy-context-dashboard/issues/17)）**
@@ -24,6 +31,8 @@
 > - **Windows / Linux 快捷方式直启自愈**：执行 `manage.py install`（非 `--panel-only`）以及后台 Sidecar 运行时会自动为 Windows 用户 `.lnk` 快捷方式和 Linux `.desktop` 入口写入 `--remote-debugging-port=0 --remote-debugging-address=127.0.0.1`（并在卸载或 `--panel-only` 时干净撤回），日常点原图标即可一次直启、零重开注入。
 > - **`v0.9.5+` 默认开启启动期自动重拉恢复（涵盖 macOS 点原图标打开与三端更新重启后）**：内嵌模式下默认启用 `autoRelaunchDebug`。当插件在 Sidecar 启动后前 `20` 秒内检测到缺少调试端口（如 macOS 直接点原版图标，或三端应用内更新重启丢参后），会自动温和重拉一次带调试参数的宿主并恢复状态栏；同一组 PID 永不重复，不同 PID 在 `60` 秒滑窗内最多允许 `2` 次（间距 `>= 5` 秒，防循环熔断），超过启动 `20` 秒绝不在对话途中杀窗。
 > - **可选零二次重启直启与关闭开关**：macOS 日常使用通过 `python3 manage.py install --with-launcher` 生成的 `~/Applications/Antigravity (Debug).app`（或终端 `python3 manage.py launch`）打开即可零重开秒注入；如需关闭自动重拉，在官方侧边栏（**＋ → Extensions → Antigrative Dashboard**）取消勾选「缺少调试端口时自动重启恢复（如更新后）」即可。
+
+**v0.9.9：** 维护性修复版本（[`#46`](https://github.com/wycocoyu/agy-context-dashboard/issues/46)、[`#50`](https://github.com/wycocoyu/agy-context-dashboard/pull/50)、[`#52`](https://github.com/wycocoyu/agy-context-dashboard/issues/52)、[`#55`](https://github.com/wycocoyu/agy-context-dashboard/pull/55)）：新增 macOS 应用内「检查更新」自动回退探测 Homebrew（`python3` 及 `3.14`–`3.10`）与官方 Framework Python 3.10+，解决 GUI 启动默认 `PATH` 命中系统 3.9.6 报错问题；并支持 Windows 注册表/OneDrive 重定向桌面 `.lnk` 快捷方式发现及重拉失败 10 分钟退避保护。完整保留 `v0.9.8` 多维上下文与全局洞察工作台、`v0.9.7` 非侵入更新提醒、`v0.9.6` daemon 凭据兼容、`v0.9.5` 默认 `autoRelaunchDebug` 恢复、`v0.9.2` 调试启动器、`IDE 2.6.0`、`Gemini 4` / `GPT-6.1 Sol` / `Claude 4.5–5.5` 与 `agy 1.5.x` CLI 全部能力。[发布说明](https://github.com/wycocoyu/agy-context-dashboard/releases/tag/v0.9.9) · [变更记录](CHANGELOG.md)。
 
 **v0.9.8：** 上线**多维上下文与全局洞察工作台**（[`#16`](https://github.com/wycocoyu/agy-context-dashboard/issues/16)、[`#24`](https://github.com/wycocoyu/agy-context-dashboard/issues/24)、[`#29`](https://github.com/wycocoyu/agy-context-dashboard/issues/29)、[`#34`](https://github.com/wycocoyu/agy-context-dashboard/issues/34)、[`#43`](https://github.com/wycocoyu/agy-context-dashboard/issues/43)、[`#44`](https://github.com/wycocoyu/agy-context-dashboard/issues/44)）：将「每日/每周活动」「按模型用量」置顶，新增宿主上下文构成、压缩趋势图、会话审计、USD 参考费用与跨会话全局洞察，支持 `2.34.0` 多代理额度汇总与零缓存未命中计数（`cacheMissSurges`）、无侵入宿主界面中文切换、按模型缓存命中率列及显式「缓存命中率：」胶囊标识，并消除 WAL 重试与空元数据的局部统计误报、强化 192 MiB 内存防护。完整保留 `v0.9.7` 非侵入更新提醒、`v0.9.6` daemon 凭据兼容、`v0.9.5` 默认 `autoRelaunchDebug` 恢复、`v0.9.2` 调试启动器、`IDE 2.6.0`、`Gemini 4` / `GPT-6.1 Sol` / `Claude 4.5–5.5` 与 `agy 1.5.x` CLI 全部能力。[发布说明](https://github.com/wycocoyu/agy-context-dashboard/releases/tag/v0.9.8) · [变更记录](CHANGELOG.md)。
 
@@ -81,7 +90,7 @@
 ## Antigravity IDE
 
 **v0.7.0** 新增反重力自己的独立 IDE 适配。下载发布页的
-`antigrative-dashboard-ide-0.9.8.vsix`，在 IDE 扩展页选择「从 VSIX 安装」。
+`antigrative-dashboard-ide-0.9.9.vsix`，在 IDE 扩展页选择「从 VSIX 安装」。
 仅安装 IDE 的用户也可以使用，无需先装桌面 App。
 
 完全退出 IDE 后，使用带
@@ -234,6 +243,9 @@ Antigravity 的 `inputTokens` 是未缓存输入。缓存命中率 = 缓存读�
 
 | 项目 | 口径 |
 | --- | --- |
+| 对话轮数 | 轨迹中用户输入（`USER_INPUT`）的总次数 |
+| 轨迹步数 | 全量分页后的轨迹步骤总数，含用户输入、模型回复、工具调用、命令执行与压缩/检查点 |
+| 请求次数 | 按 `responseId` / `messageId` 去重后的模型调用次数（单轮可含多次工具回调请求） |
 | 会话解码 TPS | 合格请求的总输出 token（含思考）÷ 对应流式时长总和 |
 | 最近一次 TPS | 最近一次合格请求总输出 token ÷ 流式时长；计时异常、短窗口或缺失时不显示速率 |
 | 端到端速率（E2E） | 合格请求总输出 token ÷（TTFT + 流式时长）总和；单独展示，不混入纯流式速度 |
@@ -373,7 +385,7 @@ Antigrative Dashboard 源码使用 [MIT](LICENSE) 许可证。项目不分发 An
 
 ---
 
-> **社区接续维护声明：** 原上游仓库 `YOU-SHOULD-KNOW-ME/antigrative-dashboard` 已不可访问（404），本仓库已更名为 **`wycocoyu/agy-context-dashboard`** 并在原 [MIT 协议](LICENSE) 下从 `v0.8.12` 基线接续维护与持续更新，完整保留原版权署名及现有用户配置、`history-v1`、`usage-v1` 与 IDE 存储路径兼容性。
+> **Fork 与独立演进说明：** 本仓库 **`wycocoyu/agy-context-dashboard`** Fork 自原作者仓库 [`ATtacK030130/antigrative-dashboard`](https://github.com/ATtacK030130/antigrative-dashboard)，目前已在原 [MIT 协议](LICENSE) 下从 `v0.8.12` 基线起与原作者分开设计、独立演进，同时完整保留原版权署名及现有用户配置、`history-v1`、`usage-v1` 与 IDE 存储路径兼容性。
 >
 > **配套侧边栏插件推荐：** 如果你还希望在 Antigravity 左侧会话栏按需求聚合会话、使用类似收件箱的待办确认工作流，欢迎一并体验 [`wycocoyu/agy-project-sidebar`](https://github.com/wycocoyu/agy-project-sidebar)。它采用同样的无侵入 Sidecar + CDP 架构，与本仪表盘完全共存、互不干扰。
 

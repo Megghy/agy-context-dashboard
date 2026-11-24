@@ -699,6 +699,7 @@ export async function summarizeTranscriptArchive(root, conversationId, { modelAl
   if (!targetFile) return null;
   const id = conversationId.toLowerCase();
   let steps = 0, rounds = 0, measuredRequests = 0, compactions = 0;
+  const stepBreakdown = { user: 0, planner: 0, tool: 0, compaction: 0, other: 0 };
   let userTokens = 0, assistantTokens = 0, toolTokens = 0, systemTokens = 0;
   let uncached = 0, cacheRead = 0, cacheWrite = 0, output = 0;
   let lastContextTokens = 0, lastActiveAt = null;
@@ -715,11 +716,11 @@ export async function summarizeTranscriptArchive(root, conversationId, { modelAl
     }
     const contentTok = obj.content?.tokens || 0;
     const thinkingTok = obj.thinking?.tokens || 0;
-    if (rawType === 'USER_INPUT') { rounds += 1; userTokens += contentTok; }
-    else if (rawType === 'PLANNER_RESPONSE') { assistantTokens += contentTok + thinkingTok; }
-    else if (/COMPACTION|CHECKPOINT/.test(rawType)) { compactions += 1; systemTokens += contentTok; }
-    else if (rawType === 'SYSTEM_MESSAGE') { systemTokens += contentTok; }
-    else { toolTokens += contentTok; }
+    if (rawType === 'USER_INPUT') { rounds += 1; stepBreakdown.user += 1; userTokens += contentTok; }
+    else if (rawType === 'PLANNER_RESPONSE') { stepBreakdown.planner += 1; assistantTokens += contentTok + thinkingTok; }
+    else if (/COMPACTION|CHECKPOINT/.test(rawType)) { compactions += 1; stepBreakdown.compaction += 1; systemTokens += contentTok; }
+    else if (rawType === 'SYSTEM_MESSAGE') { stepBreakdown.other += 1; systemTokens += contentTok; }
+    else { stepBreakdown.tool += 1; toolTokens += contentTok; }
 
     const inTok = tokenCount(obj.input_tokens) ?? 0;
     const readTok = tokenCount(obj.cache_read_tokens) ?? 0;
@@ -775,6 +776,7 @@ export async function summarizeTranscriptArchive(root, conversationId, { modelAl
     status: 'CASCADE_RUN_STATUS_ARCHIVED',
     steps,
     rounds,
+    stepBreakdown,
     requests: measuredRequests,
     measuredRequests,
     model,

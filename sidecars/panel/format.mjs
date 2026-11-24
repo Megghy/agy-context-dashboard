@@ -7,6 +7,9 @@ export function rate(number) {
 export function count(number) {
   return typeof number === 'number' && Number.isFinite(number) ? number.toLocaleString('en-US') : '—';
 }
+export function smallCount(number) {
+  return typeof number === 'number' && Number.isFinite(number) ? (Math.abs(number) < 10000 ? String(number) : number.toLocaleString('en-US')) : '—';
+}
 export function elapsed(seconds) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return '—';
   if (seconds < 60) return `${seconds.toFixed(2)} 秒`;

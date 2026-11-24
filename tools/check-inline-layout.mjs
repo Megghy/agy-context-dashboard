@@ -10,7 +10,7 @@ const sources=await Promise.all(['i18n.cjs','theme.cjs','inline-widget.cjs'].map
 const extract=s=>s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'');
 const install=`window.__agPulseI18nFactory=(${extract(sources[0])});window.__agPulseThemeFactory=(${extract(sources[1])});(${extract(sources[2])})();`;
 const id='11111111-1111-1111-1111-111111111111';
-const metrics={connection:'live',groups:[],speed:trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[{chatModel:{modelDisplayName:'Claude Sonnet',chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:112000,maxContextTokens:256000}},usage:{inputTokens:162000,responseOutputTokens:1381,outputTokens:1381,cacheReadTokens:838000,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},streamingDuration:'2s'}}]}})};
+const metrics={connection:'live',groups:[],speed:trajectoryMetrics({trajectory:{cascadeId:id,steps:Array.from({length:12},()=>({type:'USER_INPUT'})),generatorMetadata:[{chatModel:{modelDisplayName:'Claude Sonnet',chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:112000,maxContextTokens:256000}},usage:{inputTokens:162000,responseOutputTokens:1381,outputTokens:1381,cacheReadTokens:838000,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},streamingDuration:'2s'}}]}})};
 const editor='<div class="editor" contenteditable="true" role="textbox"></div>';
 const model='<div class="model-branch" style="flex:0 0 auto;min-width:123px"><button data-testid="model-selector-trigger">Claude Sonnet</button></div>';
 const controls='<div class="controls"><button class="protected">＋</button><button class="protected">⛶</button><button class="protected">×</button></div>';
@@ -56,6 +56,8 @@ try{
       await page.goto(`${base}/composer?lang=${lang}`);
       const strip=page.locator('#ag-pulse-status-bar');await strip.waitFor();
       await page.waitForFunction(()=>document.getElementById('ag-pulse-status-bar')?.shadowRoot.getElementById('tps').textContent!=='—');
+      assert.equal(await strip.locator('#context-rounds').textContent(),lang==='en'?'· 12T':lang==='zh-TW'?'· 12輪':'· 12轮');
+      assert.equal(await strip.locator('.context-label').isVisible(),false);
       assert.match(await strip.locator('#cache-detail-rate').textContent(),/83\.8%/,'Use real-size cached token statistics, not placeholder widths');
       const original='flex:0 0 auto;min-width:123px';
       assert.equal(await page.locator('.model-branch').getAttribute('style'),original,'Mount must preserve the original host styles');
@@ -76,6 +78,7 @@ try{
       assert.equal(await strip.locator('.chip:visible').count(),3);
       assert.equal(await strip.locator('#language-toggle').count(),0);
       assert.equal(await strip.locator('#tps').isVisible(),false);
+      assert.equal(await strip.locator('#context-rounds').isVisible(),false);
       for(const name of ['speed','cache','context']){
         const chip=strip.locator(`[data-card=${name}]`);assert.ok(await chip.getAttribute('aria-label'));
         await chip.click();await strip.locator(`#${name}-card`).waitFor({state:'visible'});await page.keyboard.press('Escape');

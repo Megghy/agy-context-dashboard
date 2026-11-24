@@ -1,4 +1,4 @@
-import { percent, rate, count, elapsed, countdown, resetDate } from './format.mjs';
+import { percent, rate, count, smallCount, elapsed, countdown, resetDate } from './format.mjs';
 import { createI18n } from './i18n.js';
 import { createTheme } from './theme.js';
 import { createContextLimit } from './context-limit.js';
@@ -32,7 +32,7 @@ let inspectedConversationId=null,lastContextDetailAt=0;
 let refreshEpoch=0,inFlightRefreshEpoch=-1,inFlightNeedDetail=false,inFlightUsageSync=false,queuedRefresh=false,queuedRefreshForce=false,queuedRefreshUsageSync=false;
 let insightsEpoch=0,queuedInsights=false,queuedInsightsForce=false;
 let auditEpoch=0,scopeRequestEpoch=0,didInitialUsageSync=false,didSyncUsageScope=false,usageGuideDismissed=false;
-let compositionView='bar',trendMode='total',tokenBaseExpanded=false;
+let compositionView='bar',trendMode='total',tokenBaseExpanded=false,stepsDrawerOpen=false;
 const expandedDrilldownGroups=new Set(['Rules']);
 const expandedMcpServers=new Set();
 let auditOpen=false,auditTab='files',auditStepFilter='all',auditData=null,auditConvId=null,auditLoading=false,auditError=null,highlightedStepIndex=null;
@@ -1182,15 +1182,38 @@ function render() {
   cacheAttr('title',currentOnly?t('taskCurrentOnly'):null);
   const context=speed?.context,hasCapacity=typeof context?.usedFraction==='number';
   const transcript=speed?.transcriptStats;
+  const roundCount=Number.isSafeInteger(speed?.rounds)&&speed.rounds>0?speed.rounds:null;
+  const stepCount=Number.isSafeInteger(speed?.steps)&&speed.steps>=0?speed.steps:null;
+  const roundSuffix=roundCount!==null?` · ${t('contextTurnsCount',{n:smallCount(roundCount)})}`:'';
   const compactions=transcript&&['ready','partial'].includes(transcript.status)&&typeof transcript.compactionMarkers==='number'?transcript.compactionMarkers:null;
   const compSuffix=compactions!==null&&compactions>0?` · ${t('contextCompactionSummary',{n:compactions})}`:'';
   $('strip-context').textContent=hasCapacity?`${Math.round(context.usedFraction*100)}%`:'—';
   $('strip-context-size').textContent=context?`${compact(context.usedTokens)} / ${context.maxTokens===null?'—':compact(context.maxTokens)}`:'—';
-  $('context-tab').title=(context?t('contextTokens',{used:count(context.usedTokens),max:context.maxTokens===null?'—':count(context.maxTokens)}):t('contextUnknown'))+compSuffix;
+  $('context-tab').title=(context?t('contextTokens',{used:count(context.usedTokens),max:context.maxTokens===null?'—':count(context.maxTokens)}):t('contextUnknown'))+roundSuffix+compSuffix;
   $('context-summary').textContent=hasCapacity?t('contextUsed',{used:Math.round(context.usedFraction*100),remaining:Math.round(context.remainingFraction*100)}):(speed?.archivedFallback&&Number.isSafeInteger(context?.usedTokens)?`${compact(context.usedTokens)} ${tokUnit(context.usedTokens)}`:t('contextUnknown'));
   $('context-tokens').textContent=context?t('contextTokens',{used:compact(context.usedTokens),max:context.maxTokens===null?'—':compact(context.maxTokens)}):'—';
   $('context-model').textContent=context?.model||speed?.model||'—';
   hidden('context-audit-toggle',!(activeConversationId()||speed?.conversationId));
+  const roundsPill=$('context-rounds-pill'),stepsDrawer=$('context-steps-drawer');
+  const sb=speed?.stepBreakdown;
+  const stepBuckets=sb?[['tool','stepBucketTool'],['planner','stepBucketPlanner'],['user','stepBucketUser'],['compaction','stepBucketCompaction'],['other','stepBucketOther']].map(([key,lblKey])=>({key,label:t(lblKey),count:Number.isSafeInteger(sb[key])&&sb[key]>0?sb[key]:0})).filter(b=>b.count>0):[];
+  const sbTotal=stepBuckets.reduce((sum,b)=>sum+b.count,0);
+  const canExpandSteps=roundCount!==null&&sbTotal>0;
+  if(!canExpandSteps)stepsDrawerOpen=false;
+  if(roundsPill){
+    hidden('context-rounds-pill',roundCount===null);
+    if(roundCount!==null){
+      const baseText=stepCount!==null?t('contextTurnsSteps',{rounds:smallCount(roundCount),steps:smallCount(stepCount)}):t('contextTurnsCount',{n:smallCount(roundCount)});
+      text('context-rounds-pill-text',baseText);
+      if(roundsPill.disabled!==!canExpandSteps)roundsPill.disabled=!canExpandSteps;
+      setAttr(roundsPill,'aria-expanded',String(canExpandSteps&&stepsDrawerOpen));
+      setTip(roundsPill,stepCount!==null?`${t('contextTurnsTitle',{rounds:smallCount(roundCount),steps:smallCount(stepCount)})}${canExpandSteps?` · ${t('stepBreakdownHint')}`:''}`:t('contextTurnsCount',{n:smallCount(roundCount)}));
+    }else{
+      if(!roundsPill.disabled)roundsPill.disabled=true;
+      setAttr(roundsPill,'aria-expanded','false');
+      setTip(roundsPill,null);
+    }
+  }
   const compactionPill=$('context-compaction-pill');
   if(compactionPill){
     hidden('context-compaction-pill',!(compactions!==null&&compactions>0));
@@ -1216,6 +1239,35 @@ function render() {
       if(bloatWarnings.some(w=>w.severity==='critical'))bloatPill.dataset.critical='true';else bloatPill.removeAttribute('data-critical');
       bloatPill.title=bloatWarnings.map(w=>t('bloatWarningLine',{tool:w.tool,step:w.stepIndex,tokens:compact(w.tokens)})).join('\n');
     }else bloatPill.removeAttribute('data-critical');
+  }
+  hidden('context-submeta-row',roundCount===null&&!(compactions!==null&&compactions>0)&&!hasBloat);
+  if(stepsDrawer){
+    const showDrawer=canExpandSteps&&stepsDrawerOpen;
+    hidden('context-steps-drawer',!showDrawer);
+    if(showDrawer){
+      const drawerSig=JSON.stringify([language.language,roundCount,sbTotal,stepBuckets]);
+      if(stepsDrawer.dataset.signature!==drawerSig){
+        stepsDrawer.dataset.signature=drawerSig;
+        const head=mkEl('div','steps-drawer-head');
+        head.append(mkEl('span','',t('stepBreakdownTitle',{n:smallCount(sbTotal)})),mkEl('span','steps-drawer-sub',t('contextTurnsCount',{n:smallCount(roundCount)})));
+        const bar=mkEl('div','steps-bar');
+        const chips=mkEl('div','steps-chips');
+        for(const b of stepBuckets){
+          const pct=((b.count/sbTotal)*100).toFixed(1);
+          const seg=mkEl('i',`steps-seg-${b.key}`);
+          seg.style.width=`${pct}%`;
+          seg.title=`${b.label}: ${smallCount(b.count)} (${pct}%)`;
+          bar.append(seg);
+          const chip=mkEl('span','steps-chip');
+          chip.title=seg.title;
+          chip.append(mkEl('i',`steps-dot steps-seg-${b.key}`),mkEl('span','',b.label),mkEl('strong','',smallCount(b.count)));
+          chips.append(chip);
+        }
+        stepsDrawer.replaceChildren(head,bar,chips);
+      }
+    }else if(stepsDrawer.dataset.signature){
+      delete stepsDrawer.dataset.signature;stepsDrawer.replaceChildren();
+    }
   }
   const ctxBreakdown=$('context-breakdown');
   if(ctxBreakdown){
@@ -1582,6 +1634,7 @@ $('comp-view-list')?.addEventListener('click',()=>{compositionView='list';render
 $('trend-mode-total')?.addEventListener('click',()=>{trendMode='total';renderContextComposition(snapshot?.speed?.contextComposition||null);});
 $('trend-mode-delta')?.addEventListener('click',()=>{trendMode='delta';renderContextComposition(snapshot?.speed?.contextComposition||null);});
 $('token-base-toggle')?.addEventListener('click',()=>{tokenBaseExpanded=!tokenBaseExpanded;renderTokenBaseDrilldown(snapshot?.speed?.contextComposition?.customization);});
+$('context-rounds-pill')?.addEventListener('click',()=>{if(snapshot?.speed?.stepBreakdown){stepsDrawerOpen=!stepsDrawerOpen;render();}});
 $('context-audit-toggle')?.addEventListener('click',()=>{auditOpen=!auditOpen;if(auditOpen)void loadAudit(false);else renderAuditSection();});
 $('audit-refresh-btn')?.addEventListener('click',()=>{void loadAudit(true);});
 for(const btn of document.querySelectorAll('[data-audit-tab]')){

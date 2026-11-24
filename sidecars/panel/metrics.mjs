@@ -221,13 +221,20 @@ export function trajectoryMetrics(response, storage = null) {
   const ttftMedianSeconds = median(ttftValues);
   const latestTtftSeconds = typeof latest?.ttft === 'number' && Number.isFinite(latest.ttft) ? latest.ttft : null;
   let rounds = 0, toolTotalCalls = 0, toolArgTokens = 0;
+  const stepBreakdown = { user: 0, planner: 0, tool: 0, compaction: 0, other: 0 };
   const toolIntervals = storage ? null : [];
   const toolMap = new Map();
   for (const s of steps) {
     const typeText = String(s?.type || '');
-    if (/USER_INPUT/.test(typeText)) rounds++;
+    const isUser = /USER_INPUT/.test(typeText);
+    if (isUser) rounds++;
     const tc = s?.metadata?.toolCall;
     const isTool = TOOL_STEP_RE.test(typeText) || Boolean(tc);
+    if (isUser) stepBreakdown.user++;
+    else if (isTool) stepBreakdown.tool++;
+    else if (/PLANNER_RESPONSE/.test(typeText)) stepBreakdown.planner++;
+    else if (/COMPACTION|CHECKPOINT/.test(typeText)) stepBreakdown.compaction++;
+    else stepBreakdown.other++;
     if (!isTool) continue;
     if (toolIntervals) toolIntervals.push([Date.parse(s.metadata?.startedAt || s.metadata?.createdAt), Date.parse(s.metadata?.completedAt)]);
     const explicitName = cleanToolName(tc?.name);
@@ -276,7 +283,7 @@ export function trajectoryMetrics(response, storage = null) {
   return {
     source: 'Antigravity request metadata', status: response.status || null,
     conversationId: trajectory.cascadeId || null,
-    steps: Number(response.numTotalSteps ?? steps.length), rounds,
+    steps: Number(response.numTotalSteps ?? steps.length), rounds, stepBreakdown,
     requests: ids.size, measuredRequests: acceptedCount, missingTiming, excludedTiming, rateWarnings, timingReasons, rateVersion: RATE_VERSION, counts,
     modelBreakdown, cacheMissSurges, cacheMissSurgeTokens, toolSummary,
     tokens:{...tokens,totalTokens,

@@ -36,7 +36,17 @@ test('saved Chinese selection is restored and toggling translates text and count
   assert.equal(language.countdown('2026-10-06T08:45:00Z',now),'45m');
   assert.equal(language.countdown('2026-10-06T08:00:30Z',now),'<1m');
   assert.equal(language.t('sample',{rounds:2,steps:6,requests:3}),'2 turns · 6 steps · 3 samples');
+  assert.equal(language.t('contextTurnsCount',{n:12}),'12 turns');
+  assert.equal(language.t('contextTurnsSteps',{rounds:12,steps:48}),'12 turns · 48 steps');
+  assert.match(language.t('contextTurnsTitle',{rounds:12,steps:48}),/12 user turns · 48 trajectory steps/);
+  assert.equal(language.t('stepBreakdownTitle',{n:48}),'Step breakdown · 48 steps');
+  assert.equal(language.t('contextChipRounds',{n:12}),'· 12T');
   language.toggle();assert.equal(language.t('sample',{rounds:2,steps:6,requests:3}),'2轮 6步 · 3 次采样');
+  assert.equal(language.t('contextTurnsCount',{n:12}),'12 轮');
+  assert.equal(language.t('contextTurnsSteps',{rounds:12,steps:48}),'12 轮 · 48 步');
+  assert.match(language.t('contextTurnsTitle',{rounds:12,steps:48}),/12 轮用户输入 · 48 个轨迹步骤/);
+  assert.equal(language.t('stepBreakdownTitle',{n:48}),'步数构成 · 共 48 步');
+  assert.equal(language.t('contextChipRounds',{n:12}),'· 12轮');
 });
 test('expired resets do not imply refilled quota in either language',()=>{
   const language=create();const now=Date.parse('2026-10-06T08:00:00Z');
@@ -62,6 +72,11 @@ test('Traditional Chinese (zh-TW) provides accurate localized terminology and to
   assert.equal(language.t('panelSharedQuota'),'配額');
   assert.equal(language.t('argonWeek'),'Argon 每週配額');
   assert.equal(language.t('sample',{rounds:2,steps:6,requests:3}),'2 輪 6 步 · 3 次取樣');
+  assert.equal(language.t('contextTurnsCount',{n:12}),'12 輪');
+  assert.equal(language.t('contextTurnsSteps',{rounds:12,steps:48}),'12 輪 · 48 步');
+  assert.match(language.t('contextTurnsTitle',{rounds:12,steps:48}),/12 輪使用者輸入 · 48 個軌跡步驟/);
+  assert.equal(language.t('stepBreakdownTitle',{n:48}),'步數構成 · 共 48 步');
+  assert.equal(language.t('contextChipRounds',{n:12}),'· 12輪');
   assert.equal(language.countdown('2026-10-08T10:00:00Z',now),'2d 2h 0m');
   assert.equal(language.elapsed(90),'1 分 30 秒');
   assert.equal(language.errorMessage('请先打开 Antigravity'),'請先開啟 Antigravity');

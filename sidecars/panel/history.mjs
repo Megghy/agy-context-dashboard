@@ -117,6 +117,13 @@ export function safeMetrics(value, conversationId) {
   if (Object.hasOwn(value, 'cacheMissSurges')) result.cacheMissSurges = tokenNumber(value.cacheMissSurges) ? value.cacheMissSurges : 0;
   if (Object.hasOwn(value, 'cacheMissSurgeTokens')) result.cacheMissSurgeTokens = tokenNumber(value.cacheMissSurgeTokens) ? value.cacheMissSurgeTokens : 0;
   if (Object.hasOwn(value, 'toolSummary')) result.toolSummary = safeToolSummary(value.toolSummary);
+  if (value.stepBreakdown && typeof value.stepBreakdown === 'object' && !Array.isArray(value.stepBreakdown)) {
+    const sb = {};
+    for (const k of ['user', 'planner', 'tool', 'compaction', 'other']) {
+      sb[k] = tokenNumber(value.stepBreakdown[k]) ? value.stepBreakdown[k] : 0;
+    }
+    result.stepBreakdown = sb;
+  }
   if (value.sessionMeta && typeof value.sessionMeta === 'object' && !Array.isArray(value.sessionMeta)) {
     result.sessionMeta = {
       agentRole: ROLES.includes(value.sessionMeta.agentRole) ? value.sessionMeta.agentRole : 'coordinator',

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.9 — 2026-11-22
+
+- **macOS In-App Updater Python 3.10+ Discovery (`sidecars/panel/updater.mjs`, `sidecars/panel/tests/updater.test.mjs`, [`#52`](https://github.com/wycocoyu/agy-context-dashboard/issues/52), [`#55`](https://github.com/wycocoyu/agy-context-dashboard/pull/55)):**
+  - Add `darwin` fallback probing past macOS GUI minimal `PATH` (`/usr/bin/python3` 3.9.6) to Homebrew (`/opt/homebrew/bin`, `/usr/local/bin` for `python3` and `python3.14`–`python3.10`) and `/Library/Frameworks/Python.framework/Versions/Current/bin/python3`.
+- **Windows Redirected Desktop Shortcut Discovery & Relaunch Backoff (`compat/{launch-config.mjs,launch_config.py,debug-relaunch.mjs,debug-relaunch-worker.mjs}`, [`#46`](https://github.com/wycocoyu/agy-context-dashboard/issues/46), [`#50`](https://github.com/wycocoyu/agy-context-dashboard/pull/50)):**
+  - Discover OneDrive / Registry-redirected Desktop folders when syncing Antigravity debug flags into `.lnk` shortcuts, log relaunch worker failures, and apply a 10-minute auto-relaunch backoff after failures.
+
 ## 0.9.8 — 2026-11-22
 
 - **Context Composition, Compaction Trend, Session Audit & Global Insights (`sidecars/panel/{composition.mjs,audit.mjs,pricing.mjs,insights.mjs,insights-worker.mjs}`, `compat/inline-widget.cjs`, `sidecars/panel/app.js`, [`#29`](https://github.com/wycocoyu/agy-context-dashboard/issues/29), [`#34`](https://github.com/wycocoyu/agy-context-dashboard/issues/34)):**

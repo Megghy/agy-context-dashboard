@@ -274,13 +274,14 @@ try {
     const m = await cardLoc.evaluate(card => {
       const cardRect = card.getBoundingClientRect();
       const summary = card.querySelector('#context-summary');
+      const roundsPill = card.querySelector('#context-rounds-pill');
       const bloat = card.querySelector('#context-bloat-pill');
       const compactPill = card.querySelector('#context-compaction-pill');
       const tokens = card.querySelector('#context-tokens');
       const range = document.createRange();
       range.selectNodeContents(summary);
       const summaryLines = [...range.getClientRects()].length;
-      const items = [summary, bloat, compactPill, tokens].map(el => ({
+      const items = [summary, roundsPill, bloat, compactPill, tokens].map(el => ({
         id: el?.id,
         visible: Boolean(el && !el.hidden && el.getBoundingClientRect().width > 0),
         left: el?.getBoundingClientRect().left ?? 0,
@@ -312,9 +313,25 @@ try {
       const s = p.locator('#ag-pulse-status-bar');
       await s.waitFor();
       await s.locator('[data-card=context]').click();
+      await s.locator('#context-rounds-pill').waitFor({ state: 'visible' });
       await s.locator('#context-bloat-pill').waitFor({ state: 'visible' });
       await s.locator('#context-compaction-pill').waitFor({ state: 'visible' });
+      const expectedRounds = lang === 'en' ? '1 turns' : lang === 'zh-TW' ? '1 輪' : '1 轮';
+      const expectedPill = lang === 'en' ? '1 turns · 2 steps' : lang === 'zh-TW' ? '1 輪 · 2 步' : '1 轮 · 2 步';
+      const expectedChipRounds = lang === 'en' ? '· 1T' : lang === 'zh-TW' ? '· 1輪' : '· 1轮';
+      assert.equal(await s.locator('#context-rounds-pill').textContent(), expectedPill);
+      assert.equal(await s.locator('#context-rounds-pill .rounds-pill-chevron').isVisible(), true);
+      assert.equal(await s.locator('[data-card=context]').getAttribute('data-has-rounds'), 'true');
+      assert.equal(await s.locator('#context-rounds').textContent(), expectedChipRounds);
+      assert.ok((await s.locator('[data-card=context]').getAttribute('title') || '').includes(expectedRounds));
       await assertHeroWrap(s.locator('#context-card'), `inline-${vp.tag}-${lang}`);
+      await s.locator('#context-rounds-pill').click();
+      await s.locator('#context-steps-drawer').waitFor({ state: 'visible' });
+      assert.equal(await s.locator('#context-rounds-pill').getAttribute('aria-expanded'), 'true');
+      assert.equal(await s.locator('#context-steps-drawer .steps-chip').count(), 2);
+      assert.equal(await s.locator('#context-card').evaluate(c => c.scrollWidth <= c.clientWidth), true, `inline-${vp.tag}-${lang}: drawer overflow`);
+      await s.locator('#context-rounds-pill').click();
+      await s.locator('#context-steps-drawer').waitFor({ state: 'hidden' });
       await p.close();
     }
 
@@ -323,11 +340,53 @@ try {
     panelP.on('pageerror', e => errors.push(e.message));
     await panelP.goto(base + '/');
     await panelP.locator('#context-tab').click();
+    await panelP.locator('#context-rounds-pill').waitFor({ state: 'visible' });
     await panelP.locator('#context-bloat-pill').waitFor({ state: 'visible' });
     await panelP.locator('#context-compaction-pill').waitFor({ state: 'visible' });
+    assert.equal(await panelP.locator('#context-rounds-pill').textContent(), lang === 'en' ? '1 turns · 2 steps' : lang === 'zh-TW' ? '1 輪 · 2 步' : '1 轮 · 2 步');
+    assert.equal(await panelP.locator('#context-rounds-pill .rounds-pill-chevron').isVisible(), true);
     await assertHeroWrap(panelP.locator('#context-card'), `panel-320px-${lang}`);
+    await panelP.locator('#context-rounds-pill').click();
+    await panelP.locator('#context-steps-drawer').waitFor({ state: 'visible' });
+    assert.equal(await panelP.locator('#context-rounds-pill').getAttribute('aria-expanded'), 'true');
+    assert.equal(await panelP.locator('#context-steps-drawer .steps-chip').count(), 2);
+    assert.equal(await panelP.locator('#context-card').evaluate(c => c.scrollWidth <= c.clientWidth + 1), true, `panel-320px-${lang}: drawer overflow`);
+    await panelP.locator('#context-rounds-pill').click();
+    await panelP.locator('#context-steps-drawer').waitFor({ state: 'hidden' });
     await panelP.close();
   }
+
+  Object.assign(baseMetrics, {
+    rounds: 18,
+    steps: 2464,
+    stepBreakdown: { total: 2464, tool: 1900, planner: 400, user: 18, compaction: 2, other: 144 },
+  });
+  const fourDigitInline = await browser.newPage({ viewport: { width: 900, height: 800 } });
+  fourDigitInline.on('pageerror', e => errors.push(e.message));
+  await fourDigitInline.goto(`${base}/inline?lang=zh-CN`);
+  const fStrip = fourDigitInline.locator('#ag-pulse-status-bar');
+  await fStrip.waitFor();
+  await fStrip.locator('[data-card=context]').click();
+  await fStrip.locator('#context-rounds-pill').waitFor({ state: 'visible' });
+  assert.equal(await fStrip.locator('#context-rounds-pill').textContent(), '18 轮 · 2464 步');
+  await fStrip.locator('#context-rounds-pill').click();
+  await fStrip.locator('#context-steps-drawer').waitFor({ state: 'visible' });
+  assert.ok((await fStrip.locator('#context-steps-drawer .steps-drawer-head').textContent()).includes('2464'));
+  assert.equal(await fStrip.locator('#context-steps-drawer .steps-chip strong').first().textContent(), '1900');
+  await fourDigitInline.close();
+
+  prefs = { language: 'zh-CN', languageGuideDismissed: true, revision: 1 };
+  const fourDigitPanel = await browser.newPage({ viewport: { width: 320, height: 640 } });
+  fourDigitPanel.on('pageerror', e => errors.push(e.message));
+  await fourDigitPanel.goto(base + '/');
+  await fourDigitPanel.locator('#context-tab').click();
+  await fourDigitPanel.locator('#context-rounds-pill').waitFor({ state: 'visible' });
+  assert.equal(await fourDigitPanel.locator('#context-rounds-pill').textContent(), '18 轮 · 2464 步');
+  await fourDigitPanel.locator('#context-rounds-pill').click();
+  await fourDigitPanel.locator('#context-steps-drawer').waitFor({ state: 'visible' });
+  assert.ok((await fourDigitPanel.locator('#context-steps-drawer .steps-drawer-head').textContent()).includes('2464'));
+  assert.equal(await fourDigitPanel.locator('#context-steps-drawer .steps-chip strong').first().textContent(), '1900');
+  await fourDigitPanel.close();
 
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ multiAgentUi: true, panel: true, inline: true, usagePoolStrip: true, narrowNoClip: true, workerRoleLabel: true, heroWrapNoOverflow: true, pageErrors: [] }));
