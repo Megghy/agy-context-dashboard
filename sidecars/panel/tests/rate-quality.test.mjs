@@ -8,40 +8,47 @@ const make = (id,tokens,duration,options={}) => ({stepIndices:options.tool?[0]:[
   streamingDuration:duration,timeToFirstToken:options.ttft??2,...options.chat}});
 const result = generators => trajectoryMetrics({trajectory:{generatorMetadata:generators,steps:[{type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE',plannerResponse:{toolCalls:[{}]}}]}});
 
-test('real buffered-tool reproduction is quarantined; usage, cache and TTFT survive',()=>{
+test('real buffered-tool reproduction is quarantined as buffered; usage, cache and TTFT survive',()=>{
   const normal=make('normal',909,9.6352291),bad=make('buffered',17776,.349271,{tool:true,ttft:106.005289});
   const data=result([normal,bad]);
   assert.ok(Math.abs(data.tps-94.34129594282298)<1e-8);
   assert.ok(Math.abs(data.e2eTps-909/(2+9.6352291))<1e-8);
-  assert.equal(data.latestTps,null);assert.equal(data.latestRateStatus,'unreliable');
+  assert.equal(data.latestTps,null);assert.equal(data.latestRateStatus,'buffered');
   assert.equal(data.measuredRequests,1);assert.equal(data.excludedTiming,1);
   assert.equal(data.timingReasons['short-tool-window'],1);
   assert.equal(data.timingReasons['short-window'],1);
+  assert.equal(data.latestOutputTokens,17776);
+  assert.ok(Math.abs(data.latestDurationSeconds-.349271)<1e-8);
+  assert.ok(Math.abs(data.latestE2eTps-17776/(106.005289+.349271))<1e-8);
+  assert.ok(Math.abs(data.prevQualifiedTps-909/9.6352291)<1e-8);
+  assert.equal(data.prevQualifiedSameModel,true);
   assert.equal(data.counts.responseOutput,18685);assert.equal(data.cache.outputTokens,18685);
   assert.equal(data.cache.measuredRequests,2);
   assert.equal(data.ttftSeconds,54.0026445);
   assert.equal(data.ttftMedianSeconds,54.0026445);
   assert.equal(data.latestTtftSeconds,106.005289);
 });
-test('short-window (< 1s or < 30 output tokens) is quarantined without hardcoded speed caps',()=>{
-  for(const sample of [
-    make('burst',215,.31,{ttft:4.0}),
-    make('text',27,.0797699,{ttft:4.0878562}),
-    make('tool',68,.06,{tool:true,ttft:.1}),
-    make('low-output',29,2.5,{ttft:1}),
-    make('sub-1s',500,.999,{ttft:1}),
+test('short-window (< 1s or < 30 output tokens) classifies as short without hardcoded speed caps',()=>{
+  for(const [sample,expectedStatus] of [
+    [make('burst',215,.31,{ttft:4.0}),'short'],
+    [make('text',27,.0797699,{ttft:4.0878562}),'short'],
+    [make('tool',68,.06,{tool:true,ttft:.1}),'short'],
+    [make('low-output',29,2.5,{ttft:1}),'short'],
+    [make('sub-1s',500,.999,{ttft:1}),'short'],
+    [make('normal-short-after-wait',66,.754,{ttft:8.32}),'short'],
   ]){
     const data=result([sample]);
     assert.equal(data.measuredRequests,0);assert.equal(data.excludedTiming,1);
     assert.equal(data.timingReasons['short-window'],1);
     assert.equal(data.tps,null);assert.equal(data.peakTps,null);assert.equal(data.e2eTps,null);
-    assert.equal(data.latestTps,null);assert.equal(data.latestRateStatus,'unreliable');
+    assert.equal(data.latestTps,null);assert.equal(data.latestRateStatus,expectedStatus);
     assert.ok(data.ttftMedianSeconds!==null && data.latestTtftSeconds!==null,'TTFT survives quarantine');
   }
   // Boundary >= 1.0s and >= 30 output tokens qualifies; fast models (> 250 / > 600 tok/s) are never capped
   for(const [id,tokens,duration,ttft] of [['boundary',30,1.0,2],['hydrogen',520,2.0,25],['fast',30000,2.0,2]]){
     const data=result([make(id,tokens,duration,{ttft})]);
     assert.equal(data.measuredRequests,1);assert.equal(data.excludedTiming,0);
+    assert.equal(data.latestRateStatus,'ok');
     assert.equal(data.tps,tokens/duration);assert.equal(data.peakTps,tokens/duration);
     assert.ok(Math.abs(data.e2eTps-tokens/(ttft+duration))<1e-10);
   }
@@ -49,25 +56,35 @@ test('short-window (< 1s or < 30 output tokens) is quarantined without hardcoded
 test('five same-model normal samples identify a short outlier; short new-model spikes are also blocked while sustained fast rates stay measurable',()=>{
   const baseline=Array.from({length:5},(_,i)=>make('normal'+i,200,2));
   const data=result([...baseline,make('spike',1000,.01)]);
-  assert.equal(data.tps,100);assert.equal(data.peakTps,100);assert.equal(data.latestTps,null);
+  assert.equal(data.tps,100);assert.equal(data.peakTps,100);assert.equal(data.latestTps,null);assert.equal(data.latestRateStatus,'buffered');
   assert.equal(data.timingReasons['short-outlier'],1);assert.equal(data.timingReasons['short-window'],1);
   const other=result([...baseline,make('new-model',1000,.01,{model:'Model B'})]);
   assert.equal(other.excludedTiming,1);assert.equal(other.timingReasons['short-window'],1);assert.equal(other.tps,100);
   const sustained=result([...baseline,make('fast',10000,2)]);
   assert.equal(sustained.excludedTiming,0);assert.equal(sustained.rateWarnings,1);assert.ok(sustained.latestTps>1000);
 });
+test('non-tool single-chunk burst classifies as buffered even without 5 baseline samples; same-model ref distinguishes model switches',()=>{
+  const burst=result([make('claude-burst',542,.139,{model:'Claude Sonnet 5.5 (Medium)',ttft:7.838})]);
+  assert.equal(burst.latestRateStatus,'buffered');assert.equal(burst.timingReasons['short-burst'],1);assert.equal(burst.tps,null);
+  const sameModelShort=result([make('q1',200,2,{model:'Model A'}),make('s1',66,.754,{model:'Model A',ttft:8.32})]);
+  assert.equal(sameModelShort.latestRateStatus,'short');
+  assert.equal(sameModelShort.prevQualifiedTps,100);assert.equal(sameModelShort.prevQualifiedSameModel,true);
+  const switchedShort=result([make('q1',400,2,{model:'Model A'}),make('s2',49,.488,{model:'Model B',ttft:3.44})]);
+  assert.equal(switchedShort.latestRateStatus,'short');
+  assert.equal(switchedShort.prevQualifiedTps,200);assert.equal(switchedShort.prevQualifiedSameModel,false);
+});
 test('one attempt record is valid; differing multiple-attempt usage is not paired to a single duration',()=>{
   const single=make('single',100,2,{chat:{retryInfos:[{usage:{outputTokens:100,responseOutputTokens:100}}]}});
   assert.equal(result([single]).tps,50);
   const multi=make('retry',100,2,{chat:{retryInfos:[{usage:{outputTokens:80,responseOutputTokens:80}},{usage:{outputTokens:100,responseOutputTokens:100}}]}});
-  const data=result([multi]);assert.equal(data.tps,null);assert.equal(data.counts.output,100);assert.equal(data.timingReasons['retry-scope'],1);
+  const data=result([multi]);assert.equal(data.tps,null);assert.equal(data.latestRateStatus,'unreliable');assert.equal(data.counts.output,100);assert.equal(data.timingReasons['retry-scope'],1);
 });
 test('conflicting duplicate timing and inconsistent token scopes cannot poison TPS',()=>{
   const a=make('same',100,2),b=make('same',100,.001);
-  const duplicate=result([a,b]);assert.equal(duplicate.requests,1);assert.equal(duplicate.tps,null);assert.equal(duplicate.counts.output,100);
+  const duplicate=result([a,b]);assert.equal(duplicate.requests,1);assert.equal(duplicate.tps,null);assert.equal(duplicate.latestRateStatus,'unreliable');assert.equal(duplicate.counts.output,100);
   assert.equal(duplicate.timingReasons['duplicate-scope'],1);
   for(const usage of [{thinkingOutputTokens:200},{responseOutputTokens:'bad'},{responseOutputTokens:80,thinkingOutputTokens:40}]){
-    const data=result([make('bad',100,2,{usage})]);assert.equal(data.tps,null);assert.equal(data.excludedTiming,1);
+    const data=result([make('bad',100,2,{usage})]);assert.equal(data.tps,null);assert.equal(data.latestRateStatus,'unreliable');assert.equal(data.excludedTiming,1);
     assert.equal(data.timingReasons['token-scope'],1);
   }
 });

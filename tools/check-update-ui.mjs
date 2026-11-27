@@ -81,5 +81,23 @@ try{
  await page.locator('#update-action').click();await page.locator('#update-status').filter({hasText:'發現新版本'}).waitFor();
  assert.deepEqual(await page.evaluate(()=>staleRetryCalls),[{action:'check'}]);assert.equal(await page.locator('#update-latest').textContent(),'v0.8.10');
  assert.equal(await page.locator('#update-feedback').textContent(),'現有設定與統計記錄將會保留');
- assert.deepEqual(errors,[]);console.log(JSON.stringify({manualOnly:true,currentVersion:true,bilingual:true,plainTextNotes:true,installationPolling:true,reload:true,retry:true,localizedLocationErrors:true,stalePlanRecheck:true,pageErrors:errors}));
+ await page.locator('#update-close').click();
+ // Regression (#62): after a manual "up to date" check at 0.8.6, a stale
+ // passive hint for 0.8.6 stays hidden, while a newer 0.8.7 hint re-lights the dot.
+ await page.evaluate(()=>{
+  window.passiveUpdate=null;
+  agPulseHost.updatePlugin=async()=>({state:'current',host:'app',currentVersion:'0.8.6',latestVersion:'0.8.6'});
+  const prevMetrics=agPulseHost.getMetrics;
+  agPulseHost.getMetrics=async input=>({...await prevMetrics(input),...(window.passiveUpdate?{update:window.passiveUpdate}:{})});
+ });
+ await page.locator('[data-card=context]').click();await page.locator('#check-update').click();
+ await page.locator('#update-status').filter({hasText:'已是最新版本'}).waitFor();
+ await page.locator('#update-close').click();
+ await page.evaluate(()=>{window.passiveUpdate={available:true,latestVersion:'0.8.6'};});
+ await page.waitForTimeout(2600);
+ assert.equal(await page.locator('[data-card=context]').getAttribute('data-update-available'),null,'Stale same-version passive hint must stay suppressed after current');
+ await page.evaluate(()=>{window.passiveUpdate={available:true,latestVersion:'0.8.7'};});
+ await page.locator('[data-card=context][data-update-available="true"]').waitFor({timeout:5000});
+ assert.equal(await page.locator('#check-update').getAttribute('data-update-available'),'true','Newer passive release lights check-update button badge automatically');
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({manualOnly:true,currentVersion:true,bilingual:true,plainTextNotes:true,installationPolling:true,reload:true,retry:true,localizedLocationErrors:true,stalePlanRecheck:true,passiveRecoveryBadge:true,pageErrors:errors}));
 }finally{await browser.close();await new Promise(r=>server.close(r));}

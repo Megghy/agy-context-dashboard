@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 贡献指南 / Contributing Guide
+    url: https://github.com/wycocoyu/agy-context-dashboard/blob/main/CONTRIBUTING.md
+    about: 查看分支规范（PR 请提向 dev）与本地验证命令

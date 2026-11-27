@@ -15,9 +15,9 @@ const releaseVersion=JSON.parse(await readFile(join(repo,'plugin.json'),'utf8'))
 const html=panelPageSource();
 const code=panelAppSource(),requests=[],errors=[],results=[];
 const id='11111111-1111-1111-1111-111111111111';
-let prefs={language:'en',revision:1},metricsCalls=0,failMetrics=false,rate=38.7,collectionFixture=null,integrationFixture=null,relaunchCalls=[];
+let prefs={language:'en',revision:1},metricsCalls=0,failMetrics=false,rate=38.7,collectionFixture=null,integrationFixture=null,relaunchCalls=[],overshootFixture=false;
 const transcriptSample={version:1,status:'ready',complete:true,userTokens:100,assistantTokens:200,toolTokens:50,systemTokens:10,totalTokens:360,matchedSteps:4,compactionMarkers:1,imageSteps:0};
-const sample=()=>({connection:'live',serverTime:new Date().toISOString(),quotaUpdatedAt:new Date().toISOString(),preferences:prefs,...(integrationFixture?{integration:integrationFixture}:{}),groups:[{id:'gemini',name:'Gemini',windows:{'5h':{available:true,remaining:.8,resetAt:new Date(Date.now()+3600000).toISOString()},weekly:{available:true,remaining:.75,resetAt:new Date(Date.now()+86400000).toISOString()}}}],speed:{transcriptStats:transcriptSample,...trajectoryMetrics({trajectory:{cascadeId:id,steps:[{type:'USER_INPUT'}],generatorMetadata:Array.from({length:23},(_,i)=>({chatModel:{modelDisplayName:'Gemini 3.8 Flash',streamingDuration:(100/rate)+'s',timeToFirstToken:'1.2s',usage:{messageId:'fixture-'+i,inputTokens:100,cacheReadTokens:300,outputTokens:100,responseOutputTokens:100,cacheWriteTokens:0,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:20000,maxContextTokens:100000}}}}))}})}});
+const sample=()=>({connection:'live',serverTime:new Date().toISOString(),quotaUpdatedAt:new Date().toISOString(),preferences:prefs,...(integrationFixture?{integration:integrationFixture}:{}),groups:[{id:'gemini',name:'Gemini',windows:{'5h':{available:true,remaining:.8,resetAt:new Date(Date.now()+3600000).toISOString()},weekly:{available:true,remaining:.75,resetAt:new Date(Date.now()+86400000).toISOString()}}}],speed:{transcriptStats:transcriptSample,...trajectoryMetrics({trajectory:{cascadeId:id,steps:[{type:'USER_INPUT'}],generatorMetadata:Array.from({length:23},(_,i)=>({chatModel:{modelDisplayName:'Gemini 3.8 Flash',streamingDuration:(100/rate)+'s',timeToFirstToken:'1.2s',usage:{messageId:'fixture-'+i,inputTokens:overshootFixture?526567:4975,cacheReadTokens:overshootFixture?0:14925,outputTokens:100,responseOutputTokens:100,cacheWriteTokens:0,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:overshootFixture?526667:20000,maxContextTokens:overshootFixture?512000:100000}}}}))}})}});
 const server=createServer(async(req,res)=>{
  const url=new URL(req.url,'http://localhost'),path=url.pathname;requests.push(path);
  if(path==='/api/metrics'||path==='/api/preferences'||path==='/api/relaunch-debug'){
@@ -60,7 +60,7 @@ try{
   // active 100K host window / 20% occupancy in either language.
   await view.locator('#strip-tps').waitFor();
   assert.equal(await view.locator('#panel-version').textContent(),'v'+releaseVersion);
-  assert.equal(await view.locator('#panel-name').getAttribute('title'),'Antigrative Dashboard v'+releaseVersion);
+  assert.equal(await view.locator('#panel-name').getAttribute('title'),'Antigravity Dashboard v'+releaseVersion);
   await view.locator('#strip-context').filter({hasText:'20%'}).waitFor();
   assert.equal(await view.locator('#context-tokens').textContent(),'20K / 100K toks');
   assert.equal(await view.locator('#context-rounds-pill').textContent(),'1 turns · 1 steps');
@@ -68,26 +68,35 @@ try{
   assert.ok((await view.locator('#context-tab').getAttribute('title')||'').includes('1 turns'));
   assert.equal(await view.locator('#context-provider-limit,#context-compaction-limit,#context-host-limit,#context-note,#transcript-details').count(),0,'Compact context omits duplicate capacities and diagnostic prose');
   await view.locator('#strip-tps').filter({hasText:'38.7'}).waitFor();
-  assert.deepEqual(await view.locator('.metric-label span').allTextContents(),['Speed','Cache','Context']);
+  assert.deepEqual(await view.locator('.metric-label span').allTextContents(),['Speed','Token · Cache','Quota','Context']);
   assert.ok(await view.locator('#strip-tps').evaluate(e=>parseFloat(getComputedStyle(e).fontSize))>=18);
-  assert.equal(await view.locator('#strip-cache').textContent(),'75.0%');assert.equal(await view.locator('#strip-context').textContent(),'20%');
+  assert.equal(await view.locator('#strip-cache').textContent(),'75.0%');assert.equal(await view.locator('#strip-quota').textContent(),'80.0%');assert.equal(await view.locator('#strip-quota-unit').textContent(),'5h');assert.match(await view.locator('#strip-quota-sub').textContent()||'',/^Wk 75% · (?:1h0m|59m)$/);assert.equal(await view.locator('#strip-context').textContent(),'20%');
   assert.equal(await view.locator('#cache-rate').textContent(),'75.0%');
+  assert.equal(await view.locator('#cache-card .hero-label').textContent(),'Token · Cache');
   assert.equal(await view.locator('#cache-card .rate-pill').textContent(),'Cache hit rate:75.0%');
   assert.equal(await view.locator('#five-balance').textContent(),'80.0%');assert.equal(await view.locator('#week-balance').textContent(),'75.0%');
+  assert.equal(await view.locator('#context-card #five-details,#context-card #week-details,#context-card #panel-active-group,#context-card #panel-quota-siblings,#host-i18n-row').count(),0,'Context card must exclude quota and duplicate host-i18n controls');
   const frame=()=>view.locator('.widget').evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};});
   const initialFrame=await frame();assert.equal(await view.locator('#speed-card').isVisible(),true,'Default view shows statistics, not an empty hover prompt');
-  for(const name of ['cache','context','speed']){
+  for(const name of ['cache','quota','context','speed']){
    await view.locator(`[data-card=${name}]`).click();assert.equal(await view.locator(`#${name}-card`).isVisible(),true);
    if(name==='context')assert.equal(await view.locator('#context-rounds-pill .rounds-pill-chevron').isVisible(),true);
    await page.mouse.move(0,0);await page.waitForTimeout(250);assert.equal(await view.locator(`#${name}-card`).isVisible(),true,'Selection remains after pointer leaves');
    assert.deepEqual(await frame(),initialFrame,'Metric selection must preserve the outer frame');
   }
   await view.locator('#speed-tab').focus();await page.keyboard.press('ArrowRight');assert.equal(await view.locator('#cache-tab').getAttribute('aria-selected'),'true');
+  await page.keyboard.press('ArrowRight');assert.equal(await view.locator('#quota-tab').getAttribute('aria-selected'),'true');
   await page.keyboard.press('End');assert.equal(await view.locator('#context-tab').getAttribute('aria-selected'),'true');
-  assert.equal(await view.locator('#context-card').evaluate(e=>e.scrollHeight<=e.clientHeight+1),true,'Compact context/quota details fit cleanly inside the 580px frame');
+  assert.equal(await view.locator('#context-card').evaluate(e=>e.scrollHeight<=e.clientHeight+1),true,'Compact context details fit cleanly inside the 580px frame');
+  await view.locator('#quota-tab').click();
+  assert.equal(await view.locator('#quota-card').evaluate(e=>e.scrollHeight<=e.clientHeight+1),true,'Compact quota details fit cleanly inside the 580px frame');
   await view.locator('.widget').evaluate(e=>{e.style.height='340px';});
-  await view.locator('#context-card').evaluate(e=>{e.scrollTop=60;});
-  await view.locator('#cache-tab').click();await view.locator('#context-tab').click();assert.ok(await view.locator('#context-card').evaluate(e=>e.scrollTop)>0,'Long/constrained details preserve scroll inside the stable frame');
+  await view.locator('#quota-card').evaluate(e=>{e.scrollTop=60;});
+  await view.locator('#cache-tab').click();await view.locator('#quota-tab').click();assert.ok(await view.locator('#quota-card').evaluate(e=>e.scrollTop)>0,'Long/constrained quota details preserve scroll inside the stable frame');
+  await view.locator('#context-tab').click();
+  await view.locator('.widget').evaluate(e=>{e.style.height='240px';});
+  await view.locator('#context-card').evaluate(e=>{e.scrollTop=20;});
+  await view.locator('#cache-tab').click();await view.locator('#context-tab').click();assert.ok(await view.locator('#context-card').evaluate(e=>e.scrollTop)>0,'Constrained context details preserve scroll inside the stable frame');
   await view.locator('.widget').evaluate(e=>{e.style.removeProperty('height');});
   if(mode==='opaque-iframe'){
    assert.equal(await view.locator('html').evaluate(()=>self.origin),'null');
@@ -98,12 +107,13 @@ try{
   assert.equal(await view.locator('#context-rounds-pill').textContent(),'1 轮 · 1 步');
   assert.match(await view.locator('#context-rounds-pill').getAttribute('title'),/1 轮用户输入 · 1 个轨迹步骤/);
   assert.equal(await view.locator('#strip-context').textContent(),'20%');
-  assert.deepEqual(await view.locator('.metric-label span').allTextContents(),['速度','缓存','上下文']);
+  assert.deepEqual(await view.locator('.metric-label span').allTextContents(),['速度','Token · 缓存','额度','上下文']);
+  assert.equal(await view.locator('#cache-card .hero-label').textContent(),'Token · 缓存');
   assert.equal(await view.locator('#cache-card .rate-pill').textContent(),'缓存命中率：75.0%');
   assert.deepEqual(await frame(),initialFrame,'Language switches must not resize the frame');
   await view.locator('#language-toggle').click();await page.keyboard.press('End');await page.keyboard.press('Enter');
   await view.locator('#language-toggle').filter({hasText:'繁'}).waitFor();
-  assert.deepEqual(await view.locator('.metric-label span').allTextContents(),['速率','快取','上下文']);
+  assert.deepEqual(await view.locator('.metric-label span').allTextContents(),['速率','Token · 快取','配額','上下文']);
   assert.deepEqual(await frame(),initialFrame);assert.equal(await view.locator('#context-tokens').textContent(),'20K / 100K toks');
   assert.equal(await view.locator('#context-rounds-pill').textContent(),'1 輪 · 1 步');
   assert.match(await view.locator('#context-rounds-pill').getAttribute('title'),/1 輪使用者輸入 · 1 個軌跡步驟/);
@@ -111,7 +121,7 @@ try{
   assert.equal(await view.locator('[data-language-menu]').evaluate(e=>e.matches(':popover-open')),false);
   await view.locator('#language-toggle').click();await view.locator('[data-language-menu] [data-language="zh-CN"]').click();
   await mkdir(join(repo,'.data/sidebar-design'),{recursive:true});
-  for(const name of ['speed','cache','context']){await view.locator(`[data-card=${name}]`).click();await view.locator(`#${name}-card`).evaluate(e=>e.scrollTop=0);await page.waitForTimeout(180);await page.screenshot({path:join(repo,`.data/sidebar-design/${mode}-${name}-zh.png`)});}
+  for(const name of ['speed','cache','quota','context']){await view.locator(`[data-card=${name}]`).click();await view.locator(`#${name}-card`).evaluate(e=>e.scrollTop=0);await page.waitForTimeout(180);await page.screenshot({path:join(repo,`.data/sidebar-design/${mode}-${name}-zh.png`)});}
   rate=51.2;await view.locator('#refresh-button').click();await view.locator('#strip-tps').filter({hasText:'51.2'}).waitFor();
   collectionFixture={state:'limited',code:'budget-exceeded',kind:'projected-json',freshness:'unavailable'};
   await view.locator('#refresh-button').click();await view.locator('#strip-model').filter({hasText:'统计受限'}).waitFor();
@@ -140,8 +150,8 @@ try{
   for(const part of header.parts){assert.ok(part.width>0,`${width}px header ${part.name} is not squeezed away`);assert.ok(part.left>=header.left&&part.right<=header.right,`${width}px header ${part.name} stays inside`);assert.ok(part.top>=header.top&&part.bottom<=header.bottom);}
   for(let i=1;i<header.parts.length;i++)assert.ok(header.parts[i-1].right<=header.parts[i].left+.5,`${width}px header controls must not overlap`);
   assert.equal(await page.locator('#panel-version').isVisible(),width===440,'Badge gives its space back to controls in narrow panels');
-  assert.equal(await page.locator('#panel-name').getAttribute('title'),'Antigrative Dashboard v'+releaseVersion,'Hidden badge remains discoverable through the title');
-  for(const name of ['speed','cache','context']){await page.locator(`[data-card=${name}]`).click();assert.deepEqual(await size(),initial);assert.equal(await page.locator(`#${name}-card`).evaluate(e=>e.scrollWidth<=e.clientWidth+1),true,`${width}px ${name}-card fits without horizontal overflow`);}
+  assert.equal(await page.locator('#panel-name').getAttribute('title'),'Antigravity Dashboard v'+releaseVersion,'Hidden badge remains discoverable through the title');
+  for(const name of ['speed','cache','quota','context']){await page.locator(`[data-card=${name}]`).click();assert.deepEqual(await size(),initial);assert.equal(await page.locator(`#${name}-card`).evaluate(e=>e.scrollWidth<=e.clientWidth+1),true,`${width}px ${name}-card fits without horizontal overflow`);}
   const badgeColor=()=>page.locator('#panel-version').evaluate(node=>getComputedStyle(node).backgroundColor);
   const beforeTheme=await badgeColor();
   await page.evaluate(()=>{const style=document.documentElement.style;style.setProperty('--background','#f7f0e4');style.setProperty('--foreground','#30241d');style.setProperty('--primary','#985322');});
@@ -194,7 +204,7 @@ try{
  await page.locator('#host-i18n-toggle').click();
  await page.waitForFunction(async()=>{const p=await(await fetch('/api/preferences')).json();return p.hostUiLocalization===true;});
  assert.equal(await page.locator('#host-i18n-toggle').getAttribute('aria-pressed'),'true');
- assert.equal(await page.locator('#host-i18n-on').getAttribute('aria-pressed'),'true');
+ assert.equal(await page.locator('#host-i18n-row').count(),0);
  await page.locator('#host-i18n-toggle').click();
  await page.waitForFunction(async()=>{const p=await(await fetch('/api/preferences')).json();return p.hostUiLocalization===false;});
  assert.equal(await page.locator('#host-i18n-toggle').getAttribute('aria-pressed'),'false');
@@ -202,9 +212,15 @@ try{
  await page.waitForFunction(()=>document.getElementById('relaunch-debug-status')?.textContent.includes('重启'));
  assert.equal(relaunchCalls.length,1);
  integrationFixture={state:'mounted',mode:'runtime',message:'ok',windows:1,checkedAt:new Date().toISOString()};
+ overshootFixture=true;
  await page.locator('#refresh-button').click();
  await page.waitForFunction(()=>{const n=document.getElementById('integration-note');return n.childNodes.length===0&&getComputedStyle(n).display==='none';});
+ await page.locator('#context-tab').click();
+ await page.locator('#context-tokens').filter({hasText:'526.7K / 512K toks'}).waitFor();
+ assert.equal(await page.locator('#strip-context').textContent(),'100%');
+ assert.equal(await page.locator('#context-summary').textContent(),'100% 已用');
+ assert.match(await page.locator('#context-summary').getAttribute('title')||'',/103%/);
  assert.deepEqual(errors,[]);
  await page.close();
- console.log(JSON.stringify({checks:results,automaticRecovery:true,duplicateInitSafe:true,missingDebugPortUi:true,moduleRequests:0,pageErrors:errors}));
+ console.log(JSON.stringify({checks:results,automaticRecovery:true,duplicateInitSafe:true,missingDebugPortUi:true,overWindowCapUi:true,moduleRequests:0,pageErrors:errors}));
 }finally{await browser.close();await new Promise(r=>server.close(r));}

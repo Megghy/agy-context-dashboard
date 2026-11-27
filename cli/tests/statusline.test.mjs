@@ -270,7 +270,7 @@ test('malformed and oversized inputs fail quietly without leaking data', () => {
   for (const input of ['{SECRET', 'null', '[]', '"SECRET"', ' '.repeat(262145)]) {
     const result = run(input);
     assert.equal(result.status, 1); assert.equal(result.stderr, '');
-    assert.equal(result.stdout, 'Antigrative Dashboard: --\n');
+    assert.equal(result.stdout, 'Antigravity Dashboard: --\n');
   }
   assert.equal(run({}, ['--language', 'SECRET']).status, 1);
   assert.equal(run({}, ['--width', '0']).status, 1);

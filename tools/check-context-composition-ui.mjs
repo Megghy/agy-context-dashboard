@@ -57,7 +57,7 @@ const makeSample = (id, values, markerKind = 'compaction') => {
   return { base, comp };
 };
 
-const sampleA = makeSample(cidA, [30000, 75000, 42000, 88000], 'compaction');
+const sampleA = makeSample(cidA, [30000, 75000, 42000, 118000], 'compaction');
 const sampleB = makeSample(cidB, [95000, 80000, 60000, 35000], 'checkpoint');
 
 const css = `body{margin:0;background:#202124;color:#eee;font:12px Arial}.panel{width:100%;box-sizing:border-box;padding:16px}.box{border-radius:16px;background:#292a2d;padding:4px}.editor{height:40px;padding:8px}.row{display:flex;align-items:center;justify-content:space-between;gap:4px;padding:2px}.native{display:flex;flex:1;min-width:0;align-items:center;gap:1px}.model-wrap{display:flex;min-width:0;gap:4px}.model{display:flex;min-width:0;align-items:center;padding:0 8px;gap:4px;height:28px}.protected{flex:none;width:28px;height:28px;border:0;color:inherit;background:transparent}.controls{display:flex;flex:none;gap:4px}.top{height:240px}`;
@@ -157,7 +157,7 @@ try {
       sample: sr.getElementById('trend-sample').textContent,
     };
   });
-  assert.equal(degraded.source, 'Injection — · steps + logged text');
+  assert.equal(degraded.source, 'Config — · steps + logged text');
   assert.equal(degraded.trackHidden, true, 'Plain track is hidden when composition meter is active');
   assert.equal(degraded.listHidden, false, 'List mode is active by default');
   assert.equal(degraded.legendHidden, true);
@@ -253,7 +253,7 @@ try {
       markerTitle: sr.querySelector('#context-trend-svg .trend-marker-group title')?.textContent,
     };
   });
-  assert.equal(zhCheck.source, '定制注入 16.5K · 步级桶 + 日志估算');
+  assert.equal(zhCheck.source, '配置 16.5K · 步级桶 + 日志估算');
   assert.ok(zhCheck.labels.includes('规则') && zhCheck.labels.includes('技能') && zhCheck.labels.includes('MCP 工具'));
   assert.equal(zhCheck.viewBtnList, '清单');
   assert.equal(zhCheck.viewBtnBar, '条形');

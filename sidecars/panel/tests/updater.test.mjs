@@ -373,7 +373,41 @@ test('update dialog renders concise safe markdown by language and clears passive
   await btn._listeners.click[0]();
   assert.equal(btn.querySelector('#check-update-badge').hidden,true);
   assert.equal(btn.querySelector('#check-update-ver').textContent,'');
+  menu.syncHint({available:true,latestVersion:'0.9.6'});
+  assert.equal(btn.querySelector('#check-update-badge').hidden,true,'stale checked version remains suppressed');
+  menu.syncHint({available:true,latestVersion:'1.0.0'});
+  assert.equal(btn.querySelector('#check-update-badge').hidden,false,'newer passive release surfaces green badge after current');
+  assert.equal(btn.querySelector('#check-update-ver').textContent,'v1.0.0');
  }finally{
   globalThis.document=prevDoc;globalThis.requestAnimationFrame=prevRaf;globalThis.cancelAnimationFrame=prevCaf;
  }
+});
+
+test('passive check retries failed boot check on short exponential backoff before normal cadence',async t=>{
+ let calls=0,now=10000,fail=true;
+ const {service}=await setup(t,async()=>{
+  calls++;
+  if(fail)throw Object.assign(Error('network'),{detail:'timeout'});
+  return {host:'app',currentVersion:'0.8.6',latestVersion:'1.0.0',hasUpdate:true,notes:'Fix'};
+ });
+ service.now=()=>now;
+ assert.deepEqual(await service.checkPassive({minIntervalMs:7200000,retryIntervalMs:300000}),{available:false,latestVersion:null});
+ assert.equal(calls,1);
+ assert.equal(service.passiveDiagnostics().failures,1);
+ assert.equal(service.passiveDiagnostics().lastError,'timeout');
+ now+=299000;
+ await service.checkPassive({minIntervalMs:7200000,retryIntervalMs:300000});
+ assert.equal(calls,1,'still within first 5-minute retry backoff');
+ now+=2000;
+ await service.checkPassive({minIntervalMs:7200000,retryIntervalMs:300000});
+ assert.equal(calls,2,'retried after 5 minutes when still failing');
+ assert.equal(service.passiveDiagnostics().failures,2);
+ now+=305000;
+ await service.checkPassive({minIntervalMs:7200000,retryIntervalMs:300000});
+ assert.equal(calls,2,'second failure backs off to 10 minutes');
+ fail=false;now+=305000;
+ assert.deepEqual(await service.checkPassive({minIntervalMs:7200000,retryIntervalMs:300000}),{available:true,latestVersion:'1.0.0'});
+ assert.equal(calls,3);
+ assert.equal(service.passiveDiagnostics().failures,0);
+ assert.equal(service.passiveDiagnostics().lastError,null);
 });

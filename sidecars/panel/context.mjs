@@ -132,11 +132,12 @@ export function modelCompressionLimit(_model){
  // provider's capacity nor the host's maxContextTokens proves a trigger value.
  return null;
 }
-export function contextMetrics(metadata,{model=null,sampledAt=null}={}){
+export function contextMetrics(metadata,{model=null,sampledAt=null,estimated=true}={}){
  if(!metadata||typeof metadata!=='object'||Array.isArray(metadata))return null;
  const usedTokens=count(metadata.estimatedTokensUsed),rawMax=count(metadata.maxContextTokens);
  if(usedTokens===null)return null;
  const maxTokens=rawMax>0?rawMax:null,reference=modelContextReference(model);
+ const isEstimated=estimated!==false;
  return {
   usedTokens,maxTokens,remainingTokens:maxTokens===null?null:Math.max(0,maxTokens-usedTokens),
   usedFraction:maxTokens===null?null:usedTokens/maxTokens,
@@ -148,12 +149,12 @@ export function contextMetrics(metadata,{model=null,sampledAt=null}={}){
   compressionLimit:null,compressionFraction:null,compressionSource:null,
   model:formatModelName(model),
   sampledAt:typeof sampledAt==='string'&&Number.isFinite(Date.parse(sampledAt))?new Date(sampledAt).toISOString():null,
-  source:'Antigravity context window metadata',estimated:true,
+  source:isEstimated?'Antigravity context window metadata':'Antigravity calibrated context usage',estimated:isEstimated,
  };
 }
 export function safeContext(value){
  if(!value||typeof value!=='object'||Array.isArray(value))return null;
  // Recalculate all derived fields and provider references. Never trust ratios,
  // arbitrary source URLs, unsupported limits or additional saved properties.
- return contextMetrics({estimatedTokensUsed:value.usedTokens,maxContextTokens:value.maxTokens},{model:value.model,sampledAt:value.sampledAt});
+ return contextMetrics({estimatedTokensUsed:value.usedTokens,maxContextTokens:value.maxTokens},{model:value.model,sampledAt:value.sampledAt,estimated:value.estimated===false?false:true});
 }

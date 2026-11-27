@@ -3,7 +3,7 @@ import { request } from 'node:http';
 import { StringDecoder } from 'node:string_decoder';
 import {setImmediate as yieldStream} from 'node:timers/promises';
 import { platformPaths } from '../../compat/platform.mjs';
-import { discoverProcesses,httpLogPorts,readLogTail,probeLoopbackPort,isProcessAlive,resolveDaemonCredential } from './discovery.mjs';
+import { discoverProcesses,httpLogPorts,readLogTail,probeLoopbackPort,isProcessAlive,resolveDaemonCredential,isRemoteHubCommand } from './discovery.mjs';
 import { TrajectoryJson } from './trajectory-json.mjs';
 import { TrajectoryReader } from './trajectory-reader.mjs';
 
@@ -38,7 +38,9 @@ function serverFromPorts(logPorts, processes, { daemon = null } = {}) {
   if (!port) throw new Error('等待 Antigravity 本地接口启动');
   const csrf = rows[0].CommandLine.match(/--csrf_token(?:=|\s+)"?([^\s"]+)/)?.[1] || daemon?.csrf || null;
   if (!csrf) throw new Error('当前版本未提供可用的本地检测凭据');
-  return {port,csrf,pid:rows[0].ProcessId};
+  const result = { port, csrf, pid: rows[0].ProcessId };
+  Object.defineProperty(result, 'remoteHub', { value: isRemoteHubCommand(rows[0].CommandLine), enumerable: false });
+  return result;
 }
 export function serverFromDiscovery(log, processes) { return serverFromPorts(httpLogPorts(log),processes); }
 export class AntigravityClient {

@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { platformPaths,agentExecutables } from '../../../compat/platform.mjs';
-import { parsePs,parseLsof,parseProcNet,parseNetstat,linuxPorts,discoverProcesses } from '../discovery.mjs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { platformPaths,agentExecutables,isRemoteHeadlessHost } from '../../../compat/platform.mjs';
+import { parsePs,parseLsof,parseProcNet,parseNetstat,linuxPorts,discoverProcesses,isRemoteHubCommand } from '../discovery.mjs';
 import { serverFromDiscovery,AntigravityClient } from '../client.mjs';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
@@ -162,4 +165,26 @@ test('failed or foreign-PID fallback cannot turn a stale log into a usable endpo
  }});
  assert.equal(calls.length,3);assert.deepEqual(rows[0].Ports,[]);
  assert.throws(()=>serverFromDiscovery('listening on random port at 1234 for HTTP\n',rows),/接口启动/);
+});
+
+test('isRemoteHeadlessHost, isRemoteHubCommand and hub-server log discovery detect remote SSH hubs safely',()=>{
+ assert.equal(isRemoteHeadlessHost({platform:'darwin',env:{},hasLocalHostApp:false}),false);
+ assert.equal(isRemoteHeadlessHost({platform:'linux',env:{DISPLAY:':0'},hasLocalHostApp:true}),false);
+ assert.equal(isRemoteHeadlessHost({platform:'linux',env:{SSH_CONNECTION:'1 2 3 4',DISPLAY:':0'},hasLocalHostApp:false}),true);
+ assert.equal(isRemoteHeadlessHost({platform:'linux',env:{},hasLocalHostApp:false}),true);
+ assert.equal(isRemoteHeadlessHost({platform:'darwin',server:{remoteHub:true},hasLocalHostApp:true}),true);
+ assert.equal(isRemoteHubCommand('/root/.antigravity-hub-server/bin/2.35.0-arm64/language_server --standalone --workspace_id agy-hub-ssh'),true);
+ assert.equal(isRemoteHubCommand('/Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone'),false);
+
+ const tempHome = mkdtempSync(join(tmpdir(), 'ag-hub-logs-'));
+ try {
+  const hubData = join(tempHome, '.antigravity-hub-server', 'data');
+  mkdirSync(hubData, { recursive: true });
+  const logFile = join(hubData, 'ls-2.35.0.log');
+  writeFileSync(logFile, 'listening on random port at 45123 for HTTP\n');
+  const paths = platformPaths({ platform: 'linux', home: tempHome, env: {} });
+  assert.ok(paths.logCandidates.includes(logFile));
+ } finally {
+  rmSync(tempHome, { recursive: true, force: true });
+ }
 });

@@ -4,6 +4,41 @@ import { estimateTextTokens } from './trajectory-json.mjs';
 import { classifyRates, median, RATE_VERSION, RATE_REASONS } from './rate-quality.mjs';
 const TOOL_STEP_RE=/SEARCH_WEB|BROWSE|RUN_COMMAND|COMMAND|READ|WRITE|EDIT|CODE_ACTION|TOOL|MCP|LIST|GREP|VIEW|FIND|TERMINAL/i;
 const cleanToolName=value=>typeof value==='string'?value.replace(/[\x00-\x1f\x7f]/g,'').trim().slice(0,80):'';
+const isBuiltInPlannerModel=(rawModel,formattedModel)=>{
+  const raw=String(rawModel||'').toLowerCase().replace(/^word\//,'');
+  const fmt=String(formattedModel||'');
+  return /^model_placeholder_m(?:537|667|681)$/.test(raw)||
+    /^gemini-pro-orchestrator(?:-(?:neon|carbon|argon|g1-pro))?$/.test(raw)||
+    /^Orchestrator \(.+\)$/.test(fmt);
+};
+const isBuiltInExecutorModel=(rawModel,formattedModel)=>{
+  const raw=String(rawModel||'').toLowerCase().replace(/^word\//,'');
+  const fmt=String(formattedModel||'');
+  return raw==='model_placeholder_m669'||raw==='gemini-flash-worker-agy'||fmt==='Gemini 4 Hydrogen (Orchestrator)';
+};
+const isExitPlanModeStep=step=>{
+  if(/EXIT_PLAN_MODE/.test(String(step?.type||'')))return true;
+  if(String(step?.metadata?.toolCall?.name||'').trim()==='exit_plan_mode')return true;
+  return Array.isArray(step?.plannerResponse?.toolCalls)&&step.plannerResponse.toolCalls.some(tc=>String(tc?.name||'').trim()==='exit_plan_mode');
+};
+const hasPlanReviewMarker=step=>{
+  if(!/USER_INPUT|SYSTEM_MESSAGE/.test(String(step?.type||'')))return false;
+  const fields=[step?.userInput?.text,step?.userInput?.userResponse,step?.systemMessage?.message,step?.systemMessage?.text,step?.content,step?.text,
+    ...(Array.isArray(step?.userInput?.items)?step.userInput.items.map(item=>item?.text):[])];
+  return fields.some(v=>typeof v==='string'&&/\[plan review\]/i.test(v));
+};
+const createOrchBucket=()=>({model:'',pool:'other',requests:0,inputTokens:0,cachedTokens:0,uncachedTokens:0,outputTokens:0,totalTokens:0});
+const addToOrchBucket=(bucket,model,pool,reqUncached,reqRead,reqInput,reqOutput)=>{
+  if(model&&model!=='Unknown'){bucket.model=model;bucket.pool=pool;}
+  else if(!bucket.model){bucket.model=model||'Unknown';bucket.pool=pool;}
+  bucket.requests++;
+  bucket.inputTokens+=reqInput;
+  bucket.cachedTokens+=reqRead;
+  bucket.uncachedTokens+=reqUncached;
+  bucket.outputTokens+=reqOutput;
+  bucket.totalTokens+=reqInput+reqOutput;
+};
+const finalizeOrchBucket=bucket=>bucket&&bucket.requests>0?{...bucket,hitRate:bucket.inputTokens>0?bucket.cachedTokens/bucket.inputTokens:null}:null;
 const normalizeToolSource=value=>{
   const raw=typeof value==='string'?value.toUpperCase():'';
   if(!raw)return '';
@@ -56,6 +91,15 @@ export function requestCacheMetrics(usage) {
   return { inputTokens:total, cachedTokens:read, cacheWriteTokens:write, uncachedTokens:total-read-write };
 }
 
+function settledUsageTokens(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const cached = requestCacheMetrics(usage);
+  if (!cached || cached.inputTokens <= 0) return null;
+  const out = usage.outputTokens === undefined ? 0 : tokenCount(usage.outputTokens);
+  if (out === null) return null;
+  return tokenCount(cached.inputTokens + out);
+}
+
 function unionSeconds(intervals) {
   const sorted = intervals.filter(([a, b]) => Number.isFinite(a) && Number.isFinite(b) && b >= a).sort((a, b) => a[0] - b[0]);
   let total = 0, start = null, end = null;
@@ -68,11 +112,59 @@ function unionSeconds(intervals) {
   return total / 1000;
 }
 
-export function trajectoryMetrics(response, storage = null) {
+export function trajectoryMetrics(response, storage = null, options = null) {
   const trajectory = response.trajectory || {};
   const generators = trajectory.generatorMetadata || [];
   const samples = storage?.samples || [], ids = storage?.ids || new Map();
   const steps = trajectory.steps || [];
+  const stepPhases = new Uint8Array(steps.length);
+  const stepTurns = new Int32Array(steps.length);
+  const orchTurns = new Set();
+  let curPhase = 0, curTurn = 0, phaseSwitchCount = 0, hasExitPlanMode = false, stepIdx = 0;
+  for (const s of steps) {
+    const typeText = String(s?.type || '');
+    const isUser = /USER_INPUT/.test(typeText);
+    const isPlanReview = hasPlanReviewMarker(s);
+    const isExitPlan = isExitPlanModeStep(s);
+    if (isExitPlan) {
+      if (stepIdx < stepPhases.length) {
+        stepPhases[stepIdx] = curPhase;
+        stepTurns[stepIdx] = curTurn;
+      }
+      orchTurns.add(curTurn);
+      if (curPhase !== 1) phaseSwitchCount++;
+      curPhase = 1;
+      hasExitPlanMode = true;
+    } else if (isPlanReview) {
+      if (curPhase === 1) phaseSwitchCount++;
+      curPhase = 0;
+      orchTurns.add(curTurn);
+      if (stepIdx < stepPhases.length) {
+        stepPhases[stepIdx] = curPhase;
+        stepTurns[stepIdx] = curTurn;
+      }
+    } else if (isUser) {
+      curTurn++;
+      curPhase = 0;
+      if (stepIdx < stepPhases.length) {
+        stepPhases[stepIdx] = curPhase;
+        stepTurns[stepIdx] = curTurn;
+      }
+    } else if (stepIdx < stepPhases.length) {
+      stepPhases[stepIdx] = curPhase;
+      stepTurns[stepIdx] = curTurn;
+    }
+    stepIdx++;
+  }
+  const orchCfg = options?.orchestratorSettings && typeof options.orchestratorSettings === 'object' ? options.orchestratorSettings : null;
+  const configuredPlanner = typeof orchCfg?.orchestratorModel === 'string' && orchCfg.orchestratorModel
+    ? (formatModelName(orchCfg.orchestratorModel) || orchCfg.orchestratorModel) : null;
+  const configuredExecutor = typeof orchCfg?.orchestratorExecutorModel === 'string' && orchCfg.orchestratorExecutorModel
+    ? (formatModelName(orchCfg.orchestratorExecutorModel) || orchCfg.orchestratorExecutorModel) : null;
+  const hasConfiguredPair = Boolean(configuredPlanner && configuredExecutor);
+  let plannerBucket = null, pendingPlannerBucket = null, executorBucket = null;
+  let hasBuiltInPlanner = false, hasBuiltInExecutor = false;
+  let prevOrchRole = null, inActiveExecutorSegment = false, coldStartSwitches = 0;
   const counts = { input: 0, output: 0, responseOutput: 0, thinkingOutput: 0, cacheRead: 0, cacheWrite: 0 };
   let modelSeconds = 0, cacheMissSurges = 0, cacheMissSurgeTokens = 0;
   const byModel = new Map();
@@ -82,8 +174,44 @@ export function trajectoryMetrics(response, storage = null) {
   const tokens = { inputTokens:0, cachedTokens:0, cacheWriteTokens:0, uncachedTokens:0, outputTokens:0,
     measuredRequests:0, inputRequests:0, outputRequests:0, missingInputRequests:0, missingOutputRequests:0,
     uncachedRequests:0, cachedRequests:0, cacheWriteRequests:0 };
+  const turnSegments = [];
+  let turnSeg = { start: 0, end: -1, hasVisible: false, completed: false };
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    const typeText = String(s?.type || '');
+    const isUser = /USER_INPUT/.test(typeText);
+    const isSystem = /SYSTEM_MESSAGE/.test(typeText);
+    if (isUser || (isSystem && turnSeg.hasVisible && turnSeg.completed)) {
+      if (turnSeg.hasVisible && turnSeg.completed) turnSegments.push({ start: turnSeg.start, end: i - 1 });
+      turnSeg = { start: i, end: i, hasVisible: false, completed: false };
+    }
+    turnSeg.end = i;
+    if (/PLANNER_RESPONSE/.test(typeText) && String(s?.plannerResponse?.response || '').trim()) {
+      turnSeg.hasVisible = true;
+      turnSeg.completed = !/RUNNING|PENDING|GENERATING/.test(String(s?.status || ''));
+    }
+  }
+  if (turnSeg.hasVisible && turnSeg.completed) turnSegments.push({ start: turnSeg.start, end: turnSeg.end });
+  const turnAcc = turnSegments.map(() => ({
+    model: '', models: new Set(), requests: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, streamTokens: 0, streamSeconds: 0,
+  }));
+  let lastSettledContext = null, lastChatStepIdx = -1;
   for (const [index, generator] of generators.entries()) {
     const chat = generator.chatModel;
+    if (chat && Array.isArray(generator.stepIndices)) {
+      for (const si of generator.stepIndices) if (Number.isInteger(si) && si > lastChatStepIdx) lastChatStepIdx = si;
+    }
+    const chatCwm = chat?.chatStartMetadata?.contextWindowMetadata;
+    const chatMax = tokenCount(chatCwm?.maxContextTokens);
+    const chatSettled = settledUsageTokens(chat?.usage);
+    if (chatMax > 0 && chatSettled !== null) {
+      lastSettledContext = {
+        usedTokens: chatSettled,
+        maxTokens: chatMax,
+        cwmEst: tokenCount(chatCwm?.estimatedTokensUsed),
+        model: formatModelName(chat.modelDisplayName || chat.responseModel || String(chat.model || chat.usage?.model || '')) || '',
+      };
+    }
     if (!chat?.usage) continue;
     const usage = chat.usage;
     // IDE executionId identifies a planner run/turn, not an individual model
@@ -180,7 +308,64 @@ export function trajectoryMetrics(response, storage = null) {
       cacheMissSurges++;
       cacheMissSurgeTokens += reqUncached;
     }
+    const builtInPlanner = isBuiltInPlannerModel(rawModel, formattedModel);
+    const builtInExecutor = isBuiltInExecutorModel(rawModel, formattedModel);
+    if (builtInPlanner) hasBuiltInPlanner = true;
+    if (builtInExecutor) hasBuiltInExecutor = true;
+    const gStepIndices = Array.isArray(generator.stepIndices) ? generator.stepIndices : [];
+    let inExecutorPhase = false, inPlannerPhase = false, inOrchTurn = false;
+    for (const si of gStepIndices) {
+      if (Number.isInteger(si) && si >= 0 && si < stepPhases.length) {
+        if (stepPhases[si] === 1) inExecutorPhase = true;
+        else inPlannerPhase = true;
+        if (orchTurns.has(stepTurns[si])) inOrchTurn = true;
+      }
+    }
+    if (inExecutorPhase) inPlannerPhase = false;
+    let orchRole = null;
+    if (builtInPlanner) orchRole = 'planner';
+    else if (builtInExecutor) orchRole = 'executor';
+    else if (inExecutorPhase) orchRole = 'executor';
+    else if (inPlannerPhase && inOrchTurn) orchRole = 'planner';
+    else if (!hasExitPlanMode && hasConfiguredPair && configuredPlanner !== configuredExecutor) {
+      if (formattedModel === configuredPlanner) orchRole = 'planner';
+      else if (formattedModel === configuredExecutor) orchRole = 'executor';
+    } else if (!hasExitPlanMode && hasConfiguredPair && formattedModel === configuredPlanner) {
+      orchRole = 'planner';
+    }
+    if (orchRole === 'planner') {
+      plannerBucket ||= createOrchBucket();
+      addToOrchBucket(plannerBucket, modelKey, pool, reqUncached, reqRead, reqInput, reqOutput);
+      inActiveExecutorSegment = false;
+      prevOrchRole = 'planner';
+    } else if (orchRole === 'executor') {
+      executorBucket ||= createOrchBucket();
+      addToOrchBucket(executorBucket, modelKey, pool, reqUncached, reqRead, reqInput, reqOutput);
+      if (!inActiveExecutorSegment && (hasExitPlanMode || prevOrchRole === 'planner' || inExecutorPhase)) {
+        inActiveExecutorSegment = true;
+        if (reqRead === 0 && reqInput > 0) coldStartSwitches++;
+      }
+      prevOrchRole = 'executor';
+    } else if (inPlannerPhase) {
+      pendingPlannerBucket ||= createOrchBucket();
+      addToOrchBucket(pendingPlannerBucket, modelKey, pool, reqUncached, reqRead, reqInput, reqOutput);
+      inActiveExecutorSegment = false;
+    }
+    let turnSegIdx = -1;
+    const firstTurnStep = gStepIndices.find(si => Number.isInteger(si) && si >= 0 && si < steps.length);
+    if (firstTurnStep !== undefined) {
+      turnSegIdx = turnSegments.findIndex(seg => firstTurnStep >= seg.start && firstTurnStep <= seg.end);
+      if (turnSegIdx >= 0) {
+        const acc = turnAcc[turnSegIdx];
+        if (formattedModel) { acc.model = formattedModel; acc.models.add(formattedModel); }
+        acc.requests++;
+        acc.inputTokens += reqInput;
+        acc.cachedTokens += reqRead;
+        acc.outputTokens += reqOutput;
+      }
+    }
     const sample = { outputTokens: streamTokens, responseTokens, duration, ttft, reasons, toolOnly,
+      turnSegIdx,
       tps: streamTokens !== null && duration > 0 ? streamTokens / duration : null,
       model: formattedModel, basis,
       profile: JSON.stringify([usage.apiProvider || '',chat.responseModel || usage.model || chat.model || chat.modelDisplayName || '',basis]) };
@@ -189,7 +374,7 @@ export function trajectoryMetrics(response, storage = null) {
   }
   (storage?.classify || classifyRates)(samples);
   let acceptedCount = 0, streamingSeconds = 0, sampledTokens = 0, e2eTokens = 0, e2eSeconds = 0, peakTps = null;
-  let missingTiming = 0, excludedTiming = 0, rateWarnings = 0, sampleCount = 0, latest = null;
+  let missingTiming = 0, excludedTiming = 0, rateWarnings = 0, sampleCount = 0, latest = null, lastQualified = null;
   let allResponse = true, acceptedResponse = true;
   const timingReasons = Object.fromEntries(RATE_REASONS.map(reason=>[reason,0]));
   const recentTps = [], ttftValues = [];
@@ -200,13 +385,18 @@ export function trajectoryMetrics(response, storage = null) {
     if (typeof s.ttft === 'number' && Number.isFinite(s.ttft)) ttftValues.push(s.ttft);
     for (const reason of s.reasons) if (Object.hasOwn(timingReasons, reason)) timingReasons[reason]++;
     if (s.status === 'missing' && (s.outputTokens ?? 0) > 0) missingTiming++;
-    else if (s.status === 'unreliable') excludedTiming++;
+    else if (s.status === 'unreliable' || s.status === 'buffered' || s.status === 'short') excludedTiming++;
     else if (s.status === 'ok') {
+      lastQualified = s;
       if (s.basis !== 'response') acceptedResponse = false;
-      if (s.duration < 1 || s.outlier) rateWarnings++;
+      if (s.outlier) rateWarnings++;
       acceptedCount++;
       streamingSeconds += s.duration;
       sampledTokens += s.outputTokens;
+      if (s.turnSegIdx >= 0 && s.duration > 0 && s.outputTokens !== null) {
+        turnAcc[s.turnSegIdx].streamTokens += s.outputTokens;
+        turnAcc[s.turnSegIdx].streamSeconds += s.duration;
+      }
       if (typeof s.ttft === 'number' && Number.isFinite(s.ttft) && s.ttft + s.duration > 0) {
         e2eTokens += s.outputTokens;
         e2eSeconds += s.ttft + s.duration;
@@ -220,14 +410,32 @@ export function trajectoryMetrics(response, storage = null) {
   }
   const ttftMedianSeconds = median(ttftValues);
   const latestTtftSeconds = typeof latest?.ttft === 'number' && Number.isFinite(latest.ttft) ? latest.ttft : null;
-  let rounds = 0, toolTotalCalls = 0, toolArgTokens = 0;
+  const latestOutputTokens = typeof latest?.outputTokens === 'number' && Number.isSafeInteger(latest.outputTokens) ? latest.outputTokens : null;
+  const latestDurationSeconds = typeof latest?.duration === 'number' && Number.isFinite(latest.duration) ? latest.duration : null;
+  const latestE2eTps = latest && typeof latest.outputTokens === 'number' && latestTtftSeconds !== null && latestDurationSeconds !== null && latestTtftSeconds + latestDurationSeconds > 0
+    ? latest.outputTokens / (latestTtftSeconds + latestDurationSeconds) : null;
+  const prevQualifiedTps = lastQualified && typeof lastQualified.tps === 'number' && Number.isFinite(lastQualified.tps) ? lastQualified.tps : null;
+  const prevQualifiedSameModel = Boolean(lastQualified && latest?.model && lastQualified.model === latest.model);
+  let rounds = 0, toolTotalCalls = 0, toolArgTokens = 0, lastCompactCmdIdx = -1, lastCompactionIdx = -1, compactingInProgress = false;
   const stepBreakdown = { user: 0, planner: 0, tool: 0, compaction: 0, other: 0 };
   const toolIntervals = storage ? null : [];
   const toolMap = new Map();
-  for (const s of steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
     const typeText = String(s?.type || '');
     const isUser = /USER_INPUT/.test(typeText);
-    if (isUser) rounds++;
+    if (isUser) {
+      rounds++;
+      const isCompactCmd = /^\s*\/compact\b/i.test(s?.userInput?.userResponse || s?.userInput?.text || s?.content || '') ||
+        (Array.isArray(s?.userInput?.items) && s.userInput.items.some(item => /^\s*\/compact\b/i.test(item?.text || '')));
+      if (isCompactCmd) lastCompactCmdIdx = i;
+    }
+    const isCompactionStep = /COMPACTION|CONTEXT_COMPACTION/.test(typeText) ||
+      (/CHECKPOINT/.test(typeText) && (Boolean(s?.checkpoint) || /^\s*(?:\[?context (?:summary|compaction)\]?|conversation (?:summary|checkpoint)|checkpoint summary|# Resuming from a compaction|<CONTEXT_SUMMARY>)/i.test(s?.content?.prefix || s?.checkpoint?.sessionSummary || '')));
+    if (isCompactionStep) {
+      lastCompactionIdx = i;
+      if (/RUNNING/.test(String(s?.status || ''))) compactingInProgress = true;
+    }
     const tc = s?.metadata?.toolCall;
     const isTool = TOOL_STEP_RE.test(typeText) || Boolean(tc);
     if (isUser) stepBreakdown.user++;
@@ -280,12 +488,35 @@ export function trajectoryMetrics(response, storage = null) {
   const inputParts=[tokens.uncachedTokens,tokens.cachedTokens,tokens.cacheWriteTokens];
   tokens.inputTokens = tokenCount(inputParts.reduce((sum,value)=>sum+(value??0),0));
   const totalTokens=tokenCount((tokens.inputTokens??0)+(tokens.outputTokens??0));
+  const hasBuiltIn = hasBuiltInPlanner || hasBuiltInExecutor;
+  if (hasBuiltIn && !plannerBucket && pendingPlannerBucket) plannerBucket = pendingPlannerBucket;
+  const latestModel = latest?.model || null;
+  const settingsMatch = hasConfiguredPair && Boolean(latestModel) && (latestModel === configuredPlanner || latestModel === configuredExecutor);
+  const detected = hasExitPlanMode || hasBuiltIn || settingsMatch;
+  const source = hasExitPlanMode ? 'trajectory' : hasBuiltIn ? 'model-id' : 'settings';
+  const finalPlanner = finalizeOrchBucket(plannerBucket);
+  const finalExecutor = finalizeOrchBucket(executorBucket);
+  const orchestrator = detected ? {
+    detected: true,
+    source,
+    configuredPlanner,
+    configuredExecutor,
+    switched: hasExitPlanMode || Boolean(finalPlanner && finalExecutor),
+    phaseSwitchCount,
+    coldStartSwitches,
+    planner: finalPlanner,
+    executor: finalExecutor,
+  } : null;
+  const responseRunning = /RUNNING/.test(String(response.status || ''));
+  const compactionState = compactingInProgress || (responseRunning && lastCompactCmdIdx >= 0 && lastCompactCmdIdx >= lastCompactionIdx && lastCompactCmdIdx > lastChatStepIdx)
+    ? 'compacting'
+    : (lastCompactionIdx >= 0 && lastCompactionIdx > lastChatStepIdx ? 'compacted' : 'idle');
   return {
-    source: 'Antigravity request metadata', status: response.status || null,
+    source: 'Antigravity request metadata', status: response.status || null, compactionState,
     conversationId: trajectory.cascadeId || null,
     steps: Number(response.numTotalSteps ?? steps.length), rounds, stepBreakdown,
     requests: ids.size, measuredRequests: acceptedCount, missingTiming, excludedTiming, rateWarnings, timingReasons, rateVersion: RATE_VERSION, counts,
-    modelBreakdown, cacheMissSurges, cacheMissSurgeTokens, toolSummary,
+    modelBreakdown, cacheMissSurges, cacheMissSurgeTokens, toolSummary, orchestrator,
     tokens:{...tokens,totalTokens,
       complete:tokens.missingInputRequests===0&&tokens.missingOutputRequests===0&&inputParts.every(value=>value!==null)&&tokens.outputTokens!==null&&totalTokens!==null},
     cache:{...cache,totalTokens:cache.inputTokens+cache.outputTokens,hitRate:cache.inputTokens>0?cache.cachedTokens/cache.inputTokens:null,complete:cache.missingRequests===0},
@@ -296,11 +527,40 @@ export function trajectoryMetrics(response, storage = null) {
     rateBasis: (acceptedCount ? acceptedResponse : sampleCount > 0 && allResponse) ? 'response' : 'all-output',
     streamingSeconds, modelSeconds, toolSeconds,
     ttftSeconds: ttftMedianSeconds, ttftMedianSeconds, latestTtftSeconds,
-    latestShortSample: latest?.status === 'ok' && latest.duration < 1, model: latest?.model || null,
-    context: contextMetrics(lastChat?.chatStartMetadata?.contextWindowMetadata, {
-      model:lastChat?.modelDisplayName || lastChat?.responseModel || String(lastChat?.model || ''),
-      sampledAt:lastChat?.chatStartMetadata?.createdAt,
-    }),
+    latestOutputTokens, latestDurationSeconds, latestE2eTps, prevQualifiedTps, prevQualifiedSameModel,
+    model: latest?.model || null,
+    context: (() => {
+      const lastCwm = lastChat?.chatStartMetadata?.contextWindowMetadata;
+      if (!lastCwm || typeof lastCwm !== 'object' || Array.isArray(lastCwm)) return null;
+      const lastMax = tokenCount(lastCwm.maxContextTokens);
+      const lastEst = tokenCount(lastCwm.estimatedTokensUsed);
+      const lastModelRaw = lastChat?.modelDisplayName || lastChat?.responseModel || String(lastChat?.model || '');
+      const lastSettled = settledUsageTokens(lastChat?.usage);
+      const sampledAt = lastChat?.chatStartMetadata?.createdAt;
+      if (lastMax > 0 && lastSettled !== null) {
+        return contextMetrics({ estimatedTokensUsed: lastSettled, maxContextTokens: lastMax }, { model: lastModelRaw, sampledAt, estimated: false });
+      }
+      const lastModelNorm = formatModelName(lastModelRaw) || '';
+      if (lastMax > 0 && lastSettled === null && lastEst !== null && lastSettledContext &&
+          lastSettledContext.maxTokens === lastMax && lastSettledContext.cwmEst !== null &&
+          lastEst >= lastSettledContext.cwmEst * 0.5 &&
+          (!lastSettledContext.model || !lastModelNorm || lastModelNorm === lastSettledContext.model)) {
+        const carried = tokenCount(lastSettledContext.usedTokens + Math.max(0, lastEst - lastSettledContext.cwmEst));
+        return contextMetrics({ estimatedTokensUsed: carried ?? lastEst, maxContextTokens: lastMax }, { model: lastModelRaw, sampledAt, estimated: true });
+      }
+      return contextMetrics(lastCwm, { model: lastModelRaw, sampledAt, estimated: true });
+    })(),
+    turns: turnAcc.slice(-64).map(item => ({
+      model: item.model || null,
+      multiModel: item.models.size > 1,
+      requests: item.requests,
+      inputTokens: item.inputTokens,
+      cachedTokens: item.cachedTokens,
+      outputTokens: item.outputTokens,
+      hitRate: item.inputTokens > 0 ? item.cachedTokens / item.inputTokens : null,
+      tps: item.streamSeconds > 0 && item.streamTokens > 0 ? item.streamTokens / item.streamSeconds : null,
+    })),
+    totalCompletedTurns: turnSegments.length,
     complete: Number(response.numTotalGeneratorMetadata ?? generators.length) === generators.length,
   };
 }

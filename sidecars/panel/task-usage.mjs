@@ -12,6 +12,8 @@ const tokenCounts=['measuredRequests','inputRequests','outputRequests','missingI
 const cacheValues=['inputTokens','cachedTokens','cacheWriteTokens','uncachedTokens','outputTokens','totalTokens'];
 const POOLS=['gemini','3p','local','other'];
 const ROLES=['coordinator','worker','monitor','sidecar'];
+const WORKSPACE_MODES=['inherit','share','branch'];
+const MAX_TASK_AGENTS=64;
 const count=value=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0;
 const nullableCount=value=>value===null||count(value);
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
@@ -133,11 +135,14 @@ export function aggregateTaskUsage(rootRecords,childRecordSets=[],options={}){
   const rootRole=ROLES.includes(options.rootRole)?options.rootRole:'coordinator';
   const rootLabel=cleanAgentLabel(options.rootLabel||'',40)||'Coordinator';
   const rootModelHint=cleanModel(options.rootModelHint||'');
+  const rootWorkspaceMode=WORKSPACE_MODES.includes(options.rootWorkspaceMode)?options.rootWorkspaceMode:options.rootWorkspaceMode===null?null:undefined;
+  const rootKilled=typeof options.rootKilled==='boolean'?options.rootKilled:undefined;
   const poolBreakdown=Object.fromEntries(POOLS.map(p=>[p,emptyPoolBucket()]));
   const roleBreakdown=Object.fromEntries(ROLES.map(r=>[r,emptyRoleBucket()]));
   const children=Array.isArray(childRecordSets)?childRecordSets:[];
   const agentDescriptors=new Map();
-  agentDescriptors.set('root',{key:'root',label:rootLabel,role:rootRole,modelHint:rootModelHint,tokens:0,thinkingTokens:0,requests:0,pools:new Map()});
+  agentDescriptors.set('root',{key:'root',label:rootLabel,role:rootRole,modelHint:rootModelHint,tokens:0,thinkingTokens:0,requests:0,pools:new Map(),
+    ...(rootWorkspaceMode!==undefined?{workspaceMode:rootWorkspaceMode}:{}),...(rootKilled!==undefined?{killed:rootKilled}:{})});
   roleBreakdown[rootRole].agents++;
   const collect=(values,meta)=>{
     for(const value of Array.isArray(values)?values:[]){
@@ -154,8 +159,11 @@ export function aggregateTaskUsage(rootRecords,childRecordSets=[],options={}){
     const role=ROLES.includes(child?.role)?child.role:'worker';
     const label=cleanAgentLabel(child?.label||'',40)||`Worker #${idx+1}`;
     const modelHint=cleanModel(child?.modelHint||'');
+    const workspaceMode=WORKSPACE_MODES.includes(child?.workspaceMode)?child.workspaceMode:child?.workspaceMode===null?null:undefined;
+    const killed=typeof child?.killed==='boolean'?child.killed:undefined;
     const agentKey=`child:${idx}`;
-    agentDescriptors.set(agentKey,{key:agentKey,label,role,modelHint,tokens:0,thinkingTokens:0,requests:0,pools:new Map()});
+    agentDescriptors.set(agentKey,{key:agentKey,label,role,modelHint,tokens:0,thinkingTokens:0,requests:0,pools:new Map(),
+      ...(workspaceMode!==undefined?{workspaceMode}:{}),...(killed!==undefined?{killed}:{})});
     roleBreakdown[role].agents++;
     collect(list,{own:false,agentKey,role,label,modelHint});
   });
@@ -206,15 +214,18 @@ export function aggregateTaskUsage(rootRecords,childRecordSets=[],options={}){
   const modelBreakdown=[...modelMap.values()]
     .sort((a,b)=>(b.totalTokens??-1)-(a.totalTokens??-1)||b.requests-a.requests||a.model.localeCompare(b.model))
     .slice(0,16);
+  const totalAgents=agentDescriptors.size;
+  const isSwarm=options.isSwarm===true;
   const agents=[...agentDescriptors.values()]
-    .filter(a=>a.requests>0||a.key==='root'||a.role!=='worker')
+    .filter(a=>a.requests>0||a.key==='root'||a.role!=='worker'||isSwarm)
     .sort((a,b)=>(a.key==='root'?-1:b.key==='root'?1:(b.tokens??-1)-(a.tokens??-1)))
-    .slice(0,16)
+    .slice(0,MAX_TASK_AGENTS)
     .map(a=>{
       let topPool='other',best=-1;
       for(const [p,v]of a.pools)if(v>best){best=v;topPool=p;}
       if(best<0&&a.modelHint)topPool=quotaPoolForModel(a.modelHint,'');
-      return {label:a.label,role:a.role,pool:topPool,model:a.model||a.modelHint||defaultPoolModelLabel(topPool),tokens:a.tokens,thinkingTokens:a.thinkingTokens,requests:a.requests};
+      return {label:a.label,role:a.role,pool:topPool,model:a.model||a.modelHint||defaultPoolModelLabel(topPool),tokens:a.tokens,thinkingTokens:a.thinkingTokens,requests:a.requests,
+        ...(a.workspaceMode!==undefined?{workspaceMode:a.workspaceMode}:{}),...(a.killed!==undefined?{killed:a.killed}:{})};
     });
   const subagents=count(options.subagents)?options.subagents:children.length;
   const loadedSubagents=count(options.loadedSubagents)?Math.min(options.loadedSubagents,subagents):Math.min(children.length,subagents);
@@ -225,7 +236,8 @@ export function aggregateTaskUsage(rootRecords,childRecordSets=[],options={}){
   summary.cache.complete=summary.cache.complete&&state==='ready'&&loadedSubagents===subagents;
   return {...summary,ownTokens:contributionTotal(all.filter(value=>value.own).map(value=>value.row)),
     subagentTokens:contributionTotal(all.filter(value=>!value.own).map(value=>value.row)),
-    thinkingTokens,poolBreakdown,roleBreakdown,modelBreakdown,agents,
+    thinkingTokens,poolBreakdown,roleBreakdown,modelBreakdown,agents,totalAgents,
+    ...(Object.hasOwn(options,'isSwarm')&&typeof options.isSwarm==='boolean'?{isSwarm:options.isSwarm}:{}),
     subagents,loadedSubagents,state,complete};
 }
 
@@ -271,14 +283,23 @@ function safeTaskModelBreakdown(raw){
 }
 
 function safeAgentsList(raw){
-  if(!Array.isArray(raw)||raw.length>16)return null;
+  if(!Array.isArray(raw)||raw.length>MAX_TASK_AGENTS)return null;
   const out=[];
   for(const a of raw){
     if(!object(a)||!ROLES.includes(a.role)||!POOLS.includes(a.pool)||!count(a.requests)||!nullableCount(a.tokens)||!nullableCount(a.thinkingTokens))return null;
     const label=cleanAgentLabel(a.label,40);if(!label)return null;
     const model=typeof a.model==='string'?(cleanModel(a.model)||cleanAgentLabel(a.model,80)||'Unknown'):'Unknown';
     if(/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(model))return null;
-    out.push({label,role:a.role,pool:a.pool,model,tokens:a.tokens,thinkingTokens:a.thinkingTokens,requests:a.requests});
+    const item={label,role:a.role,pool:a.pool,model,tokens:a.tokens,thinkingTokens:a.thinkingTokens,requests:a.requests};
+    if(Object.hasOwn(a,'workspaceMode')){
+      if(a.workspaceMode!==null&&!WORKSPACE_MODES.includes(a.workspaceMode))return null;
+      item.workspaceMode=a.workspaceMode;
+    }
+    if(Object.hasOwn(a,'killed')){
+      if(typeof a.killed!=='boolean')return null;
+      item.killed=a.killed;
+    }
+    out.push(item);
   }
   return out;
 }
@@ -336,6 +357,14 @@ export function safeTaskUsage(value){
   if(Object.hasOwn(value,'agents')){
     const ag=safeAgentsList(value.agents);if(!ag)return null;
     extra.agents=ag;
+  }
+  if(Object.hasOwn(value,'totalAgents')){
+    if(!count(value.totalAgents))return null;
+    extra.totalAgents=value.totalAgents;
+  }
+  if(Object.hasOwn(value,'isSwarm')){
+    if(typeof value.isSwarm!=='boolean')return null;
+    extra.isSwarm=value.isSwarm;
   }
   const covered=state==='ready'&&value.loadedSubagents===value.subagents;
   const tokens={...Object.fromEntries([...tokenValues,...tokenCounts].map(key=>[key,t[key]])),

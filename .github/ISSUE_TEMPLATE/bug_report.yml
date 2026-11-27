@@ -1,0 +1,57 @@
+name: Bug Report / 问题反馈
+description: 报告桌面端、IDE 扩展或 CLI 的异常问题 / Report a bug in Desktop, IDE extension, or CLI
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈问题！请尽量提供完整环境信息与复现步骤（上传日志前请先脱敏本机隐私信息）。
+        Thanks for reporting! Please include environment details and reproduction steps (redact personal paths or tokens before sharing logs).
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 运行环境 / Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Remote SSH
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: 使用形态 / Surface
+      options:
+        - Antigravity Desktop App (inline / side panel)
+        - Antigravity IDE (VSIX extension)
+        - CLI statusline
+        - Installer / Updater (manage.py)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: 版本信息 / Versions
+      description: 请填写插件版本与宿主 Antigravity 版本 / Plugin version and host Antigravity version
+      placeholder: "e.g. plugin v1.0.1 / Antigravity 2.34.0"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述与复现步骤 / Description & Steps to Reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断输出或日志（可选）/ Diagnostics or Logs (Optional)
+      description: "可运行 `python3 manage.py status`（Windows 用 `python`）并粘贴脱敏结果"
+      render: text

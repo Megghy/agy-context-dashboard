@@ -5,9 +5,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
+import signal
 import subprocess
 import sys
+from urllib.parse import urlparse
 import zipfile
 from functools import wraps
 
@@ -139,8 +142,56 @@ def _current_profile():
     return _paths_module.platform_paths(home=HOME, env={})['profile']
 
 
+def _sidecar_data_dir():
+    override = os.environ.get('ANTIGRAVITY_EXECUTABLE_DATA_DIR', '').strip()
+    if HOME == _paths['home'] and override:
+        return Path(override).expanduser()
+    return HOME / '.gemini' / 'antigravity' / 'sidecar_data' / 'antigravity-pulse' / 'panel' / 'data'
+
+
+def _is_sidecar_process(pid):
+    try:
+        if sys.platform == 'win32':
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command',
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+                capture_output=True, text=True, timeout=3, check=False,
+            )
+            cmdline = result.stdout or ''
+            return result.returncode == 0 and 'main.mjs' in cmdline
+        result = subprocess.run(
+            ['ps', '-ww', '-p', str(int(pid)), '-o', 'command='],
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+        cmdline = result.stdout or ''
+        lower = cmdline.lower()
+        return (
+            result.returncode == 0
+            and 'main.mjs' in cmdline
+            and ('sidecar_sdk' in cmdline or 'antigravity' in lower or 'node' in lower)
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+
+
+def restart_active_sidecar():
+    marker = _sidecar_data_dir() / 'active-sidecar.json'
+    try:
+        record = json.loads(marker.read_text(encoding='utf-8-sig'))
+        pid = int(record.get('pid') or 0)
+    except Exception:
+        return False
+    if pid <= 0 or pid == os.getpid() or not _is_sidecar_process(pid):
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+        return True
+    except OSError:
+        return False
+
+
 @lifecycle_operation
-def install(panel_only=False, legacy_loader=False, with_cli=False, node=None, language=None, with_launcher=False):
+def install(panel_only=False, legacy_loader=False, with_cli=False, node=None, language=None, with_launcher=False, remote_bridge_port=None):
     own_plugin()
     config = json_read(CONFIG)
     if not isinstance(config, dict) or not isinstance(config.get('plugins', {}), dict):
@@ -174,6 +225,8 @@ def install(panel_only=False, legacy_loader=False, with_cli=False, node=None, la
         settings['appResources'] = str(APP.parent)
     if os.environ.get('AG_PULSE_PROFILE'):
         settings['profile'] = str(_paths['profile'])
+    if remote_bridge_port is not None:
+        settings['remoteBridgePort'] = _validate_bridge_port(remote_bridge_port)
     lc = launch_config()
     launch_result = {'configured': False, 'supported': False, 'entrypoints': []}
     if not panel_only and not legacy_loader:
@@ -186,6 +239,8 @@ def install(panel_only=False, legacy_loader=False, with_cli=False, node=None, la
         settings.pop('managedLaunch', None)
     atomic_json(SETTINGS, settings)
     set_enabled(True)
+    if not legacy_loader and restart_active_sidecar():
+        print('Restarted active plugin sidecar so updated UI/runtime code takes effect immediately.')
     host = lc.inspect_host_archive(APP)
     print('Installed:', PLUGIN)
     if not panel_only and not legacy_loader and launch_result['configured']:
@@ -212,6 +267,100 @@ def install(panel_only=False, legacy_loader=False, with_cli=False, node=None, la
     if with_launcher:
         launcher_result = desktop_launcher().install_launcher(HOME, LOCAL, APP)
         print('Desktop debug launcher installed:', launcher_result['path'])
+
+
+def _normalize_remote_host(raw, allow_wildcard=False):
+    if not isinstance(raw, str):
+        raise ValueError('Remote SSH host must be a string.')
+    text = raw.strip()
+    if allow_wildcard and text == '*':
+        return '*'
+    text = re.sub(r'^ssh:\s*', '', text, flags=re.IGNORECASE).strip()
+    if not text or len(text) > 160 or not re.fullmatch(r'[A-Za-z0-9._:@\[\]-]+', text):
+        raise ValueError(f'Invalid remote SSH host identifier: {raw!r}')
+    return text
+
+
+def _validate_bridge_port(raw):
+    try:
+        port = int(str(raw).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'Invalid remote bridge port: {raw!r}') from exc
+    if not (1024 <= port <= 65535):
+        raise ValueError('Remote bridge port must be between 1024 and 65535.')
+    return port
+
+
+def _normalize_loopback_endpoint(raw):
+    text = str(raw).strip()
+    if not text or len(text) > 128:
+        raise ValueError(f'Invalid loopback endpoint: {raw!r}')
+    if text.isdigit():
+        port = int(text)
+        if not (1 <= port <= 65535):
+            raise ValueError(f'Invalid loopback port: {raw!r}')
+        return f'http://127.0.0.1:{port}'
+    candidate = text if re.match(r'^https?://', text, re.IGNORECASE) else f'http://{text}'
+    parsed = urlparse(candidate)
+    if parsed.scheme != 'http' or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError(f'Remote endpoint must be a plain loopback http:// URL: {raw!r}')
+    if parsed.path not in ('', '/'):
+        raise ValueError(f'Remote endpoint must not include a path: {raw!r}')
+    if (parsed.hostname or '').lower() not in ('127.0.0.1', 'localhost'):
+        raise ValueError(f'Remote endpoint host must be 127.0.0.1 or localhost: {raw!r}')
+    if not parsed.port or not (1 <= parsed.port <= 65535):
+        raise ValueError(f'Remote endpoint must include a valid port: {raw!r}')
+    return f'http://127.0.0.1:{parsed.port}'
+
+
+def set_remote_bridge(port=None):
+    settings = json_read(SETTINGS)
+    if port is None:
+        settings.pop('remoteBridgePort', None)
+        atomic_json(SETTINGS, settings)
+        print('Remote SSH loopback bridge disabled.')
+        return None
+    valid = _validate_bridge_port(port)
+    settings['remoteBridgePort'] = valid
+    atomic_json(SETTINGS, settings)
+    print(f'Remote SSH loopback bridge configured on 127.0.0.1:{valid}. Restart the Antigravity sidecar to apply.')
+    return valid
+
+
+def set_remote_endpoint(host, endpoint):
+    clean_host = _normalize_remote_host(host, allow_wildcard=True)
+    clean_endpoint = _normalize_loopback_endpoint(endpoint)
+    settings = json_read(SETTINGS)
+    endpoints = settings.get('remoteEndpoints')
+    if not isinstance(endpoints, dict):
+        endpoints = {}
+    endpoints[clean_host] = clean_endpoint
+    settings['remoteEndpoints'] = endpoints
+    atomic_json(SETTINGS, settings)
+    print(f'Mapped remote SSH host {clean_host} -> {clean_endpoint}')
+    return clean_host, clean_endpoint
+
+
+def remove_remote_endpoint(host):
+    clean_host = _normalize_remote_host(host, allow_wildcard=True)
+    settings = json_read(SETTINGS)
+    endpoints = settings.get('remoteEndpoints')
+    if not isinstance(endpoints, dict):
+        print(f'Remote SSH endpoint not configured: {clean_host}')
+        return False
+    removed = False
+    for key in list(endpoints.keys()):
+        norm = '*' if key.strip() == '*' else re.sub(r'^ssh:\s*', '', key.strip(), flags=re.IGNORECASE).strip()
+        if norm.lower() == clean_host.lower():
+            endpoints.pop(key, None)
+            removed = True
+    if endpoints:
+        settings['remoteEndpoints'] = endpoints
+    else:
+        settings.pop('remoteEndpoints', None)
+    atomic_json(SETTINGS, settings)
+    print(f'Removed remote SSH endpoint: {clean_host}' if removed else f'Remote SSH endpoint not configured: {clean_host}')
+    return removed
 
 
 def install_launcher():
@@ -327,7 +476,7 @@ def uninstall():
 def status():
     installed = (PLUGIN / 'plugin.json').is_file()
     enabled = installed and json_read(CONFIG).get('plugins', {}).get('antigravity-pulse', {}).get('enabled', True)
-    health_file = HOME / '.gemini' / 'antigravity' / 'sidecar_data' / 'antigravity-pulse' / 'panel' / 'data' / 'integration-state.json'
+    health_file = _sidecar_data_dir() / 'integration-state.json'
     lc = launch_config()
     host = lc.inspect_host_archive(APP)
     try:
@@ -339,11 +488,12 @@ def status():
         launcher_state = desktop_launcher().inspect_launcher(HOME, LOCAL)
     except Exception as error:
         launcher_state = {'error': str(error)}
+    saved_settings = json_read(SETTINGS)
     payload = {
         'installed': installed,
         'enabled': bool(enabled),
         'pluginDirectory': str(PLUGIN),
-        'integrationMode': json_read(SETTINGS).get('mode', 'legacy'),
+        'integrationMode': saved_settings.get('mode', 'legacy'),
         'hostVersion': host['version'],
         'hostRequiresDebugFlag': host['requiresDebugFlag'],
         'launchConfiguration': lc.inspect_desktop_launch(home=HOME, local=LOCAL),
@@ -351,6 +501,8 @@ def status():
         'toolbarAdapterRecoverable': APP.exists() and original_for_current(APP.read_bytes()) is not None,
         'debugPortAvailable': debug_port_available,
         'launcher': launcher_state,
+        'remoteEndpoints': saved_settings.get('remoteEndpoints') or {},
+        'remoteBridgePort': saved_settings.get('remoteBridgePort'),
         'cli': cli_state,
     }
     if not debug_port_available:
@@ -391,9 +543,19 @@ def main():
     p.add_argument('--app-path', type=Path, help='Path to the desktop app resources/app.asar for a custom installation')
     p.add_argument('--with-cli', action='store_true', help='Also install or sync the official CLI statusLine adapter')
     p.add_argument('--with-launcher', action='store_true', help='Also install a desktop debug-port launcher shortcut')
+    p.add_argument('--remote-bridge-port', type=int, help='Enable optional loopback-only Remote SSH metrics bridge on 127.0.0.1:<port>')
     p.add_argument('--node', help='Node.js 20+ executable when installing the CLI adapter with --with-cli')
     p.add_argument('--language', choices=('en', 'zh-CN', 'zh-TW'), help='Override shared desktop language choice when used with --with-cli')
     for action in ('enable', 'disable', 'uninstall'): sub.add_parser(action)
+    p = sub.add_parser('set-remote-bridge', help='Enable or disable the optional 127.0.0.1 Remote SSH metrics bridge port')
+    bg = p.add_mutually_exclusive_group(required=True)
+    bg.add_argument('--port', type=int, help='Loopback port (1024-65535) for the remote sidecar bridge')
+    bg.add_argument('--off', action='store_true', help='Disable the remote sidecar bridge')
+    p = sub.add_parser('set-remote-endpoint', help='Map a Remote SSH host label (or "*") to a local SSH-forwarded loopback endpoint')
+    p.add_argument('host', help='Remote SSH host label shown in the sidebar (e.g. user@host, alias, or "*")')
+    p.add_argument('endpoint', help='Local forwarded loopback endpoint (e.g. 17891 or http://127.0.0.1:17891)')
+    p = sub.add_parser('remove-remote-endpoint', help='Remove a Remote SSH host endpoint mapping')
+    p.add_argument('host', help='Remote SSH host label (or "*") to remove')
     p = sub.add_parser('status')
     p.add_argument('--app-path', type=Path, help='Path to the desktop app resources/app.asar for a custom installation')
     p = sub.add_parser('install-launcher', help='Install a desktop launcher shortcut that enables the loopback debug port')
@@ -421,7 +583,11 @@ def main():
             return 0
         if args.action == 'install':
             install(args.panel_only, args.legacy_loader, with_cli=args.with_cli, node=args.node,
-                    language=args.language, with_launcher=args.with_launcher)
+                    language=args.language, with_launcher=args.with_launcher,
+                    remote_bridge_port=args.remote_bridge_port)
+        elif args.action == 'set-remote-bridge': set_remote_bridge(None if args.off else args.port)
+        elif args.action == 'set-remote-endpoint': set_remote_endpoint(args.host, args.endpoint)
+        elif args.action == 'remove-remote-endpoint': remove_remote_endpoint(args.host)
         elif args.action == 'install-launcher': install_launcher()
         elif args.action == 'uninstall-launcher': uninstall_launcher()
         elif args.action == 'launch': launch(workspace=args.workspace, exe=args.exe, relaunch=args.relaunch)

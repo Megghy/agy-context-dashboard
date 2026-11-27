@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { platformPaths } from './platform.mjs';
 import { createHash } from 'node:crypto';
+import { sanitizeRemoteHost, buildRendererTrajectoryProbe } from './remote-ssh.mjs';
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -88,6 +89,10 @@ export function validatedInput(value) {
   if (typeof value.composerModel === 'string') {
     const composerModel = value.composerModel.replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
     if (composerModel) result.composerModel = composerModel;
+  }
+  if (typeof value.remoteHost === 'string') {
+    const remoteHost = sanitizeRemoteHost(value.remoteHost);
+    if (remoteHost) result.remoteHost = remoteHost;
   }
   return result;
 }
@@ -184,6 +189,7 @@ function rendererBridge(binding, allowNested = false) {
     getPreferences: () => call('preferences', {}),
     setPreferences: input => call('preferences', input),
     getHostI18nOverrides: () => call('host-i18n', {}),
+    compactChat: () => call('compact-chat', {}),
     report: input => { void call('diagnostic', input); },
   };
 }
@@ -203,6 +209,10 @@ export function makeRendererSource(i18n, widget, theme = '', owner = null, gener
   // A delayed injection from a superseded instance cannot replace a newer UI.
   return owner?'if(!window.__agPulseRuntimeRank||window.__agPulseRuntimeRank[0]<'+generation+'||(window.__agPulseRuntimeRank[0]==='+generation+'&&window.__agPulseRuntimeRank[1]<='+JSON.stringify(owner)+')){'+code+'}':code;
 }
+
+const frameHref = frame => typeof frame?.url === 'string'
+  ? (typeof frame.urlFragment === 'string' && frame.urlFragment && !frame.url.includes('#') ? frame.url + frame.urlFragment : frame.url)
+  : '';
 
 export class RuntimeUi {
   constructor({ snapshot, source, profile = platformPaths().profile,
@@ -289,14 +299,24 @@ export class RuntimeUi {
     connection.inflight++;
     try {
       let result = {};
-      if (input.type === 'metrics') result = await this.enabled() ? await this.snapshot(validatedInput(input.input)) : { ...offline('Antigrative Dashboard 已停用'), enabled: false };
+      if (input.type === 'metrics') {
+        if (await this.enabled()) {
+          const metricsInput = validatedInput(input.input);
+          if (metricsInput.remoteHost && metricsInput.conversationId) {
+            metricsInput.fetchRemoteTrajectory = cid => this.fetchRendererTrajectory(connection, cid, p.executionContextId);
+          }
+          result = await this.snapshot(metricsInput);
+        } else {
+          result = { ...offline('Antigrative Dashboard 已停用'), enabled: false };
+        }
+      }
       else if(input.type==='update'&&this.updater){
         if(!await this.enabled())throw Error('Plugin disabled');
         result=await this.updater.request(input.input);
       }
       else if (input.type === 'preferences' && this.preferences) {
         const value=input.input;
-        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','quotaDisplay','usageScope','autoRelaunchDebug','hostUiLocalization','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preferences request');
+        if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['language','languageGuideDismissed','usageGuideDismissed','speedStyle','quotaDisplay','usageScope','autoRelaunchDebug','hostUiLocalization','inlineCacheHit','cacheChipMode','barColors','themeMode','cacheHitTone','cacheHitTiers','barOrder','barHidden','contextChipMode','stripMode','barPlacement','turnFooter','contextLimitTokens','contextLimitOverrides'].includes(key)))throw new Error('Invalid preferences request');
         result=Object.keys(value).length?await this.preferences.set(value):await this.preferences.get();
         if(Object.keys(value).length&&result&&!result.error)void this.pushPreferences(result,{exclude:connection});
       }
@@ -304,6 +324,26 @@ export class RuntimeUi {
         result = await this.enabled()
           ? await readHostI18nOverrides(this.overrideFiles ?? this.defaultOverrideFiles())
           : { overrides: {}, hash: 'disabled' };
+      }
+      else if (input.type === 'compact-chat') {
+        await connection.command('Input.insertText', { text: '/compact' });
+        await new Promise(r => setTimeout(r, 120));
+        await connection.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+        await connection.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+        await new Promise(r => setTimeout(r, 80));
+        const sent = await connection.command('Runtime.evaluate', {
+          expression: `(() => {
+            const btn = Array.from(document.querySelectorAll('[data-testid="send-button"],[data-tooltip-id*="send-button"]')).find(b => !b.disabled && b.getAttribute('data-tooltip-id') !== 'input-send-button-record-tooltip');
+            if (btn) { btn.click(); return true; }
+            return false;
+          })()`,
+          returnByValue: true,
+        });
+        if (!sent?.result?.value) {
+          await connection.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+          await connection.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+        }
+        result = { ok: true };
       }
       else if (input.type === 'diagnostic' && ['boot', 'mounted', 'mount-error'].includes(input.input?.stage)) {
         if (input.input.stage === 'mounted' && input.input.editorFound && input.input.composerFound) connection.mounted = true;
@@ -318,6 +358,21 @@ export class RuntimeUi {
     } finally { connection.inflight--; }
   }
   rendererGuard(expression){return this.owner?'if(window.__agPulseRuntimeOwner==='+JSON.stringify(this.owner)+'){'+expression+'}':expression;}
+  async fetchRendererTrajectory(connection, conversationId, contextId = undefined) {
+    if (!connection || connection.closed || connection.revoked || !conversationId) return null;
+    try {
+      const res = await connection.command('Runtime.evaluate', {
+        expression: buildRendererTrajectoryProbe(conversationId),
+        awaitPromise: true,
+        returnByValue: true,
+        ...(contextId === undefined ? {} : { contextId }),
+      });
+      if (res?.exceptionDetails) return null;
+      return res?.result?.value || null;
+    } catch {
+      return null;
+    }
+  }
   async attach(target) {
     let connection;
     connection = this.connect(target.webSocketDebuggerUrl, { onEvent: message => { void this.event(connection, message); } });
@@ -333,14 +388,16 @@ export class RuntimeUi {
       if(this.stopping||!await this.owns())throw new Error('Sidecar ownership changed');
       const frame = await connection.command('Page.getFrameTree'); connection.frameId = frame.frameTree?.frame?.id;
       if (!connection.frameId) throw new Error('Main renderer frame unavailable');
-      if(connection.ideWebview&&(connection.frameId!==target.expectedFrameId||frame.frameTree.frame.url!==target.expectedUrl||
+      if(connection.ideWebview&&(connection.frameId!==target.expectedFrameId||frameHref(frame.frameTree.frame)!==target.expectedUrl||
         frame.frameTree.frame.parentId!==target.expectedParentId))throw new Error('IDE Agent frame changed during discovery');
       await connection.command('Page.enable');
       await connection.command('Runtime.enable');
       if(connection.ideWebview&&(connection.revoked||connection.closed))throw new Error('IDE Agent context changed during attachment');
       await connection.command('Runtime.addBinding', { name: this.binding });
-      const guardedSource = 'if (location.origin === ' + JSON.stringify(connection.origin) +
-        (connection.ideWebview?' && location.href === '+JSON.stringify(target.expectedUrl):'') + ') {' + this.sourceForTarget(target) + '}';
+      connection.target=target;
+      const rawSource=this.sourceForTarget(target);
+      connection.rawSource=rawSource;
+      const guardedSource=this.buildGuardedSource(connection,rawSource);
       connection.guardedSource = guardedSource;
       // Nested Agent documents receive no persistent preload. Every replacement
       // must pass IDE ownership/resource/frame validation again.
@@ -357,6 +414,10 @@ export class RuntimeUi {
       try{if(this.owner)await connection.command('Runtime.removeBinding',{name:this.binding});}catch{}
       connection.close();throw error;
     }
+  }
+  buildGuardedSource(connection, rawSource) {
+    return 'if (location.origin === ' + JSON.stringify(connection.origin) +
+      (connection.ideWebview?' && location.href === '+JSON.stringify(connection.target?.expectedUrl):'') + ') {' + rawSource + '}';
   }
   async tick() {
     if (this.busy || this.stopping) return;
@@ -397,9 +458,23 @@ export class RuntimeUi {
           connection.mounted = status?.mounted === true;
           if(!connection.ideWebview&&(status?.fontFamily||status?.monoFontFamily))sampledTheme={fontFamily:status.fontFamily||undefined,monoFontFamily:status.monoFontFamily||undefined};
           else if(!sampledTheme.fontFamily&&!sampledTheme.monoFontFamily&&(status?.fontFamily||status?.monoFontFamily))sampledTheme={fontFamily:status.fontFamily||undefined,monoFontFamily:status.monoFontFamily||undefined};
+          let hotUpdated=false;
+          const nextRaw=this.sourceForTarget(connection.target||{url:connection.origin});
+          if(nextRaw&&nextRaw!==connection.rawSource){
+            if(!await this.owns())break;
+            const nextGuarded=this.buildGuardedSource(connection,nextRaw);
+            if(!connection.ideWebview){
+              if(connection.script)try{await connection.command('Page.removeScriptToEvaluateOnNewDocument',{identifier:connection.script});}catch{}
+              connection.script=(await connection.command('Page.addScriptToEvaluateOnNewDocument',{source:nextGuarded})).identifier;
+            }
+            connection.rawSource=nextRaw;connection.guardedSource=nextGuarded;
+            const upgraded=await connection.command('Runtime.evaluate',{expression:nextGuarded});
+            if(upgraded.exceptionDetails)throw new Error('Widget hot-reload failed');
+            hotUpdated=true;
+          }
           // Startup can swap the document between discovery and first injection.
           // Reinstall missing hooks rather than waiting forever for a composer.
-          if (status && (!status.installed || !status.bridge)) {
+          if (!hotUpdated && status && (!status.installed || !status.bridge)) {
             if(!await this.owns())break;
             const recovery = await connection.command('Runtime.evaluate', { expression: connection.guardedSource });
             if (recovery.exceptionDetails) throw new Error('Widget recovery failed');
@@ -416,10 +491,12 @@ export class RuntimeUi {
         if(v&&v.length<=240&&!/[;{}<>\\/\n\r\0]|url\s*\(|var\s*\(|expression\s*\(|javascript:|@import/i.test(v))this.rendererTheme[k]=v;
       }
       const mounted=[...this.sessions.values()].some(c=>c.mounted);
+      this.nextTickAt=0;
       await this.setHealth(mounted ? 'mounted' : this.sessions.size ? 'waiting-for-composer' : 'waiting',
         mounted ? 'Dashboard attached to the conversation composer' : this.sessions.size ? 'Renderer connected; waiting for a conversation composer if needed' : 'Waiting for the app renderer');
     } catch (error) {
       const missingDebugPort = error?.code === 'ENOENT';
+      let state = 'reconnecting';
       let message = missingDebugPort
         ? 'Antigravity debug port unavailable; relaunch with remote debugging enabled or use the side panel.'
         : 'Inline connection unavailable; the side panel remains available. Retrying automatically.';
@@ -428,13 +505,15 @@ export class RuntimeUi {
         try {
           const detail = await this.diagnoseError(error);
           if (detail && typeof detail === 'object') {
+            if (typeof detail.state === 'string' && detail.state) state = detail.state;
             if (typeof detail.message === 'string' && detail.message) message = detail.message;
             extra = detail;
           }
         } catch {}
       }
-      await this.setHealth('reconnecting', message, extra);
-      if ((missingDebugPort || extra?.reason === 'missing-debug-port' || extra?.reason === 'debug-port-disabled') && !this.stopping && await this.owns()) {
+      this.nextTickAt = state === 'unavailable' ? Date.now() + Math.max(this.interval, 60000) : 0;
+      await this.setHealth(state, message, extra);
+      if ((missingDebugPort || extra?.reason === 'missing-debug-port' || extra?.reason === 'debug-port-disabled') && state !== 'unavailable' && !this.stopping && await this.owns()) {
         try { await this.onMissingDebugPort?.(extra); } catch { /* Missing-port callback must not crash collection. */ }
       }
     }
@@ -459,8 +538,8 @@ export class RuntimeUi {
     this.sessions.clear();this.rendererTheme={};
   }
   start() {
-    if (this.running) return; this.running = true; this.stopping = false;
-    void this.tick(); this.timer = setInterval(() => { void this.tick(); }, this.interval); this.timer.unref?.();
+    if (this.running) return; this.running = true; this.stopping = false; this.nextTickAt = 0;
+    void this.tick(); this.timer = setInterval(() => { if (this.nextTickAt && Date.now() < this.nextTickAt) return; void this.tick(); }, this.interval); this.timer.unref?.();
   }
   async stop() { this.running = false; this.stopping = true; clearInterval(this.timer); await this.detachAll(); }
 }

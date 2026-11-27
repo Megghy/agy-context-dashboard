@@ -1,6 +1,7 @@
 // Disk-backed exact statistics. Run only inside the bounded background worker.
 import {DatabaseSync} from 'node:sqlite';
 import {trajectoryMetrics} from './metrics.mjs';
+import {classifySample} from './rate-quality.mjs';
 import {usageRecords} from './usage.mjs';
 import {taskRecords,mergeTaskRecords} from './task-usage.mjs';
 import {delegatedIds} from './delegation.mjs';
@@ -74,12 +75,7 @@ CREATE TABLE IF NOT EXISTS deviations(v REAL); CREATE INDEX IF NOT EXISTS deviat
   }
   for(const row of this.statement('SELECT i,j FROM samples ORDER BY i').iterate()){
    this.tick();const s=decodeSample(row.j),limit=this.statement('SELECT v FROM limits WHERE profile=?').get(s.profile)?.v;
-   const tokens=s.outputTokens!==undefined?s.outputTokens:s.responseTokens;
-   if(!Number.isFinite(s.tps)&&s.duration>0&&tokens!==null)s.reasons.push('nonfinite-rate');
-   if(s.duration>0&&s.duration<1&&tokens>0&&s.toolOnly&&s.ttft>=2&&s.ttft/s.duration>=20)s.reasons.push('short-tool-window');
-   s.outlier=limit!==undefined&&s.tps>limit;if(s.outlier&&s.duration<1&&!s.reasons.length)s.reasons.push('short-outlier');
-   if(s.duration>0&&tokens!==null&&(s.duration<1||tokens<30))s.reasons.push('short-window');
-   s.status=s.reasons.length?'unreliable':tokens===null||!(s.duration>0)?'missing':'ok';this.samplePut(row.i,s);
+   classifySample(s,limit);this.samplePut(row.i,s);
   }
  }
  toolSeconds(){let start=null,end=null,total=0;for(const {a,b} of this.statement('SELECT a,b FROM intervals ORDER BY a,b').iterate()){this.tick();if(start===null){start=a;end=b;}else if(a<=end)end=Math.max(end,b);else{total+=end-start;start=a;end=b;}}return (total+(start===null?0:end-start))/1000;}

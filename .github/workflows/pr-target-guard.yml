@@ -1,0 +1,68 @@
+name: PR Target Guard
+
+on:
+  pull_request_target:
+    branches:
+      - main
+
+permissions:
+  pull-requests: write
+
+jobs:
+  check-pr-target:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce dev-first PR target for community contributors
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const author = pr.user.login;
+
+            if (author === owner) {
+              core.info(`Owner PR (#${pr.number}) to main is allowed.`);
+              return;
+            }
+
+            const marker = '<!-- pr-target-guard -->';
+            const body = [
+              marker,
+              `Hi @${author}, thank you for contributing!`,
+              '',
+              'The `main` branch is reserved for releases from `dev`. Community pull requests must target **`dev`** instead of `main`.',
+              '',
+              '### How to fix (no need to close this PR)',
+              '1. Click **Edit** next to the PR title at the top of this page.',
+              '2. Change the **base** branch dropdown from `main` to `dev`.',
+              '3. Confirm the change — CI will automatically re-run against `dev`.',
+              '',
+              '---',
+              '',
+              `@${author} 你好，感谢你的贡献！`,
+              '',
+              '`main` 分支仅用于从 `dev` 合入发版，社区贡献者的 PR 请提交到 **`dev`** 分支。',
+              '',
+              '### 修改方式（无需关闭重提）',
+              '1. 点击本页面顶部 PR 标题右侧的 **Edit**。',
+              '2. 将 **base** 目标分支从 `main` 改为 `dev`。',
+              '3. 确认后 CI 会自动重新运行。',
+            ].join('\n');
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              per_page: 50,
+            });
+            const existing = comments.data.find((c) => c.body && c.body.includes(marker));
+            if (!existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body,
+              });
+            }
+
+            core.setFailed(`PR #${pr.number} by @${author} targets "main". Only @${owner} can target "main"; please switch base branch to "dev".`);

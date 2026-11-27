@@ -9,6 +9,12 @@ import { performance } from 'node:perf_hooks';
 const exec = promisify(execFile);
 const languageServer = command => /(?:^|[\/\\])language_server(?:\.native)?(?:_(?:linux|macos|darwin)(?:_(?:x64|arm64))?)?(?:\.exe)?(?:\s|$)/.test(command);
 
+export function isRemoteHubCommand(commandLine) {
+  const cmd = String(commandLine || '');
+  return /(?:^|\s)--workspace_id(?:=|\s+)["']?[^"'\s]*ssh\b/i.test(cmd)
+    || /[\/\\]\.antigravity-hub-server[\/\\]/i.test(cmd);
+}
+
 export function isProcessAlive(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {

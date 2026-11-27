@@ -160,7 +160,7 @@ test('cache recovery cannot revive TPS rejected by current rate-quality classifi
   response=raw(2);response.trajectory.steps=[{type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE',plannerResponse:{response:'',toolCalls:[{}]}}];
   for(const g of response.trajectory.generatorMetadata){g.stepIndices=[0];g.chatModel.streamingDuration='0.001s';g.chatModel.timeToFirstToken='2s';delete g.chatModel.usage.apiProvider;}
   const fresh=(await store.snapshot({conversationId:id,force:true})).speed;
-  assert.equal(fresh.tps,null);assert.equal(fresh.latestRateStatus,'unreliable');
+  assert.equal(fresh.tps,null);assert.equal(fresh.latestRateStatus,'buffered');
   assert.equal(fresh.cacheRestoredFromHistory,true);assert.equal(fresh.restoredFromHistory,false);
   assert.equal(fresh.tokens.totalTokens,2200);assert.equal(fresh.counts.output,200);
 });

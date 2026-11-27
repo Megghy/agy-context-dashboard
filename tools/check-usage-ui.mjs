@@ -137,7 +137,11 @@ try{
  for(let i=0;i<5;i++)await page.locator('#previous').click();assert.equal(await page.locator('#table-body tr').count(),0);assert.deepEqual(await frame(),initialFrame,'Empty months must not shrink/recenter the window');assert.deepEqual(await chartFrame(),initialChart,'Scrollbar changes must not move the chart');
  for(let i=0;i<5;i++)await page.locator('#next').click();assert.deepEqual(await frame(),initialFrame);
  const colors=await page.locator('#legend .dot').evaluateAll(ns=>ns.map(n=>getComputedStyle(n).backgroundColor));assert.equal(new Set(colors).size,5);
- await page.locator('[data-period=week]').click();assert.equal(await page.locator('.bar-column').count(),12);await page.locator('[data-period=month]').click();assert.equal(await page.locator('.bar-column').count(),12);
+ await page.locator('[data-period=week]').click();assert.equal(await page.locator('.bar-column').count(),12);
+ const checkNoXOverlap=()=>page.locator('.x-label').evaluateAll(els=>{const xs=els.map(e=>({t:e.textContent,l:e.getBoundingClientRect().left,r:e.getBoundingClientRect().right}));const ov=[];for(let i=1;i<xs.length;i++)if(xs[i].l<xs[i-1].r+1)ov.push([xs[i-1].t,xs[i].t]);return ov;});
+ assert.deepEqual(await checkNoXOverlap(),[],'Week x-axis labels must not overlap');
+ await page.locator('[data-period=month]').click();assert.equal(await page.locator('.bar-column').count(),12);
+ assert.deepEqual(await checkNoXOverlap(),[],'Month x-axis labels must not overlap');
  assert.deepEqual(await frame(),initialFrame,'Day/week/month changes must preserve the window frame');
  const multistack=page.locator('.stack').filter({has:page.locator('.bar-segment')}).last();
  const stackGeometry=await multistack.evaluate(n=>({gap:parseFloat(getComputedStyle(n).gap),height:n.getBoundingClientRect().height,segments:[...n.children].map(s=>({radius:parseFloat(getComputedStyle(s).borderTopLeftRadius),height:s.getBoundingClientRect().height}))}));
@@ -173,5 +177,106 @@ try{
  await page.locator('#locale').click();await page.locator('[data-language-menu] [data-language="zh-CN"]').click();await page.waitForTimeout(150);assert.equal(await page.locator('#usage-intro').isVisible(),true,'Local replay: changing language resets the introduction');
  await page.locator('#usage-intro-done').click();await page.evaluate(()=>document.documentElement.style.setProperty('--primary','#46895e'));await page.waitForTimeout(400);assert.equal(await page.locator('#usage-intro').isVisible(),true,'Local replay: changing theme resets the introduction');
  await page.waitForTimeout(3500);assert.equal(await page.locator('#usage-intro').isVisible(),true,'Polling must not dismiss a replayed introduction');
+ const embedPage=await browser.newPage({viewport:{width:640,height:760}});embedPage.on('pageerror',e=>errors.push(e.message));
+ await embedPage.goto(`http://127.0.0.1:${server.address().port}`);
+ await embedPage.evaluate(()=>{
+  const host=document.createElement('div');host.id='embed-period-check';host.style.cssText='width:460px;height:620px;background:#fff;position:relative;';document.body.replaceChildren(host);
+  const lang=window.__agPulseI18nFactory('zh-CN'),theme=window.__agPulseThemeFactory();
+  const s=document.createElement('style');s.textContent=theme.css('#embed-period-check');document.head.append(s);host.dataset.pulseTheme='light';
+  const ud=window.__agPulseUsageFactory({root:host,language:lang,embedded:true,showHeaderTabs:false,themeHost:host,...(window.__agPulseSurface?{setMarkup:window.__agPulseSurface.setMarkup}:{})});
+  ud.setTab('details');ud.open(testData);window.__embedUd=ud;window.__embedHost=host;
+ });
+ for(const w of [460,280]){
+  await embedPage.evaluate(width=>{window.__embedHost.style.width=width+'px';window.__embedUd.renderIfVisible();},w);
+  for(const [per,expectedCols] of [['week',8],['month',6],['day',31]]){
+   const immediateBg=await embedPage.evaluate(p=>{
+    const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot;
+    sr.querySelector(`[data-period="${p}"]`).click();
+    return getComputedStyle(sr.querySelector('#period-controls button[aria-pressed="true"]')).backgroundColor;
+   },per);
+   assert.notEqual(immediateBg,'rgba(0, 0, 0, 0)',`embed ${w}px ${per} immediate active pill`);
+   await embedPage.waitForTimeout(200);
+   const r=await embedPage.evaluate(()=>{
+    const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot;
+    const wrap=sr.querySelector('.chart-wrap'),xs=[...sr.querySelectorAll('.x-label')].map(e=>({t:e.textContent,l:e.getBoundingClientRect().left,r:e.getBoundingClientRect().right}));
+    const overlaps=[];for(let i=1;i<xs.length;i++)if(xs[i].l<xs[i-1].r+1)overlaps.push([xs[i-1].t,xs[i].t]);
+    const controls=sr.getElementById('period-controls'),activeBtn=controls.querySelector('button[aria-pressed="true"]');
+    return {cols:sr.querySelectorAll('#plot .bar-column').length,wrapOverflow:wrap.scrollWidth>wrap.clientWidth+1,overlaps,segBg:getComputedStyle(controls).backgroundColor,activeBg:getComputedStyle(activeBtn).backgroundColor,firstLegend:sr.querySelector('#legend button')?.textContent||'',firstRow:sr.querySelector('#table-body tr td')?.textContent||''};
+   });
+   assert.equal(r.cols,expectedCols,`embed ${w}px ${per} cols`);
+   assert.equal(r.wrapOverflow,false,`embed ${w}px ${per} wrapOverflow`);
+   assert.deepEqual(r.overlaps,[],`embed ${w}px ${per} overlaps`);
+   assert.notEqual(r.activeBg,r.segBg,`embed ${w}px ${per} contrast`);
+   assert.notEqual(r.activeBg,'rgba(0, 0, 0, 0)',`embed ${w}px ${per} opaque active pill`);
+   assert.equal(r.firstLegend,r.firstRow,`embed ${w}px ${per} legend order`);
+  }
+ }
+ await embedPage.evaluate(()=>{window.__embedUd.setTab('overview');});
+ const embedHeatCols=[];
+ for(const w of [420,280]){
+  await embedPage.evaluate(px=>{window.__embedHost.style.width=px+'px';},w);
+  await embedPage.waitForTimeout(100);
+  const hCheck=await embedPage.evaluate(()=>{
+   const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot,wrap=sr.querySelector('.heat-wrap'),btns=[...sr.querySelectorAll('#heat button')],empty=btns.find(b=>b.dataset.level==='0'),sw=sr.querySelector('.swatch:not([data-level])'),r=btns[0]?.getBoundingClientRect();
+   return {count:btns.length,cols:btns.length/7,overflow:wrap?wrap.scrollWidth>wrap.clientWidth:true,swatchBorder:sw?getComputedStyle(sw).borderTopColor:'rgba(0, 0, 0, 0)',emptyBorder:empty?getComputedStyle(empty).borderTopColor:null,cellW:r?.width||0,diff:r?Math.abs(r.width-r.height):99};
+  });
+  assert.ok(hCheck.count>=84&&hCheck.count<=140&&hCheck.count%7===0,`embed ${w}px heat count=${hCheck.count}`);
+  assert.equal(hCheck.overflow,false,`embed ${w}px heatmap must not overflow horizontally`);
+  assert.notEqual(hCheck.swatchBorder,'rgba(0, 0, 0, 0)',`embed ${w}px empty scale swatch should show hairline border`);
+  if(hCheck.emptyBorder!==null)assert.notEqual(hCheck.emptyBorder,'rgba(0, 0, 0, 0)',`embed ${w}px empty heat cell should show hairline border`);
+  assert.ok(hCheck.cellW>=12&&hCheck.diff<=1.5,`embed ${w}px heat cells must stay crisp squares: ${JSON.stringify(hCheck)}`);
+  embedHeatCols.push(hCheck.cols);
+ }
+ assert.ok(embedHeatCols[0]>embedHeatCols[1],`embed 420px (${embedHeatCols[0]}w) should render more columns than 280px (${embedHeatCols[1]}w)`);
+ // Issue #67: embedded dense daily stacked bars, pill legend without internal scrollbar, and 7+ model foldable toggle
+ await embedPage.evaluate(()=>{
+  window.__embedHost.style.width='420px';
+  window.__embedUd.setTab('details');
+  const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot;
+  sr.querySelector('[data-period="day"]').click();
+ });
+ await embedPage.waitForTimeout(80);
+ const chart67=await embedPage.evaluate(()=>{
+  const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot;
+  const plot=sr.getElementById('plot'),legend=sr.getElementById('legend'),stack=sr.querySelector('.plot .stack'),btn=sr.querySelector('#legend button');
+  return {
+   dense:plot.classList.contains('is-dense'),
+   stackPct:stack?Math.round((stack.getBoundingClientRect().width/stack.parentElement.getBoundingClientRect().width)*100):0,
+   stackRadius:stack?getComputedStyle(stack).borderTopLeftRadius:'',
+   legendOverflowY:getComputedStyle(legend).overflowY,
+   pillRadius:btn?getComputedStyle(btn).borderTopLeftRadius:'',
+   toggleHidden:sr.getElementById('legend-toggle').hidden,
+  };
+ });
+ assert.equal(chart67.dense,true);
+ assert.ok(chart67.stackPct>=80,`Dense day bar width should fill ~84%, got ${chart67.stackPct}%`);
+ assert.equal(chart67.stackRadius,'2px');
+ assert.notEqual(chart67.legendOverflowY,'auto','Legend should use flow pills/toggle rather than an inner scrollbar');
+ assert.equal(chart67.pillRadius,'999px');
+ assert.equal(chart67.toggleHidden,true,'5 models fit cleanly without needing fold toggle');
+ // Feed 8 models into embedded view and test #legend-toggle fold/expand while keeping all 8 buttons in #legend
+ await embedPage.evaluate(()=>{
+  const extraModels=['Gemini 4 Neon','Gemini 4 Flash','Claude Sonnet 4.6','Claude Opus 4.6','GPT-5.4','o4-mini','DeepSeek R1','Qwen Max'];
+  const dayModels=Object.fromEntries(extraModels.map((m,i)=>[m,{input:40000-i*3000,output:8000,total:48000-i*3000,requests:4,cached:20000}]));
+  const clone={...testData,accountKey:'acct-8-models',models:extraModels,days:testData.days.map(d=>({...d,models:dayModels}))};
+  window.__embedUd.open(clone);
+ });
+ await embedPage.waitForTimeout(80);
+ const foldBefore=await embedPage.evaluate(()=>{
+  const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot;
+  return {buttons:sr.querySelectorAll('#legend button').length,folded:sr.getElementById('legend').classList.contains('is-folded'),toggleHidden:sr.getElementById('legend-toggle').hidden,expanded:sr.getElementById('legend-toggle').getAttribute('aria-expanded')};
+ });
+ assert.equal(foldBefore.buttons,8);
+ assert.equal(foldBefore.folded,true);
+ assert.equal(foldBefore.toggleHidden,false);
+ assert.equal(foldBefore.expanded,'false');
+ await embedPage.evaluate(()=>{window.__embedHost.querySelector('#usage-embed > div').shadowRoot.getElementById('legend-toggle').click();});
+ const foldAfter=await embedPage.evaluate(()=>{
+  const sr=window.__embedHost.querySelector('#usage-embed > div').shadowRoot;
+  return {folded:sr.getElementById('legend').classList.contains('is-folded'),expanded:sr.getElementById('legend-toggle').getAttribute('aria-expanded')};
+ });
+ assert.equal(foldAfter.folded,false);
+ assert.equal(foldAfter.expanded,'true');
+ await embedPage.close();
  assert.deepEqual(errors,[]);console.log(JSON.stringify({host:ide?'ide':'desktop',trustedTypes:ide,checks:'Usage entry and onboarding persistence/retry/local replay; hover dismissal and keyboard return; themed year menu; stable frame; heatmap and model chart/filter; polling; language/theme; narrow layout; account isolation; missing snapshots and composer replacement',passed:true}));
 }finally{await browser.close();await new Promise(r=>server.close(r));}

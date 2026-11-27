@@ -7,16 +7,30 @@ import { MetricsStore } from './store.mjs';
 import { DesktopUsage } from './usage.mjs';
 import { SessionAuditService } from './audit.mjs';
 import { InsightsScanner } from './insights.mjs';
+import { trajectoryMetrics } from './metrics.mjs';
+import { compositionMetrics } from './composition.mjs';
 import { loadSidecarSdk } from './sdk.mjs';
 import { RuntimeUi, makeRendererSource } from '../../compat/runtime-ui.mjs';
-import { agentExecutables, platformPaths } from '../../compat/platform.mjs';
+import { agentExecutables, isRemoteHeadlessHost, platformPaths } from '../../compat/platform.mjs';
 import { inspectHostArchive, inspectDesktopLaunch, ensureDesktopLaunchConfig } from '../../compat/launch-config.mjs';
 import { PreferencesStore } from '../../compat/preferences.mjs';
 import { SidecarOwner } from '../../compat/sidecar-owner.mjs';
 import { readHostTheme } from '../../compat/host-theme.mjs';
+import { readHostOrchestrator } from '../../compat/host-orchestrator.mjs';
 import { panelAppSource,panelPageSource } from './panel-source.mjs';
 import { AppUpdater, releaseRuntimeDirectory } from './updater.mjs';
 import { scheduleHostRelaunch } from '../../compat/debug-relaunch.mjs';
+import {
+  sanitizeRemoteHost,
+  resolveRemoteEndpoint,
+  fetchRemoteMetrics,
+  mergeRemoteMetrics,
+  buildRemoteFallbackMetrics,
+  validateBridgePort,
+  startRemoteBridgeServer,
+  createUnreachableTracker,
+  normalizeRendererTrajectory,
+} from '../../compat/remote-ssh.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The host starts this sidecar in sidecars/panel. Windows holds the process's
@@ -24,6 +38,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 try { releaseRuntimeDirectory(join(HERE,'..','..')); } catch {}
 const createTheme=createRequire(import.meta.url)('../../compat/theme.cjs');
 const themeCss=()=>createTheme().css(':root');
+let pluginVersion = '';
+try { pluginVersion = JSON.parse(readFileSync(join(HERE, '..', '..', 'plugin.json'), 'utf8').replace(/^\uFEFF/, '')).version || ''; } catch {}
 const paths=platformPaths();
 const ownership=process.env.ANTIGRAVITY_SIDECAR_WEB_PORT?new SidecarOwner(paths.data):null;
 let settingsCache={},settingsAt=-Infinity;
@@ -41,21 +57,97 @@ store.onBackgroundResult=(scope,id,file,options)=>usage.ingestDisk(scope,id,file
 const preferences=new PreferencesStore();
 const updater=new AppUpdater({pluginDir:join(HERE,'..','..'),dataDir:paths.data});
 let liveComposerModel = null;
+const remoteBackoff = createUnreachableTracker();
 const metrics = async input => {
   if(ownership&&!await ownership.isOwner())throw Error('Sidecar ownership changed');
   runtimeSettings();
-  const prefs=await preferences.snapshot();
-  const hostTheme=await readHostTheme(),liveTheme=integration.rendererTheme;
+  const [prefs, hostTheme, orchestratorSettings] = await Promise.all([
+    preferences.snapshot(),
+    readHostTheme(),
+    readHostOrchestrator(),
+  ]);
+  const liveTheme=integration.rendererTheme;
   const theme=(liveTheme?.fontFamily||liveTheme?.monoFontFamily)?{...liveTheme,...hostTheme}:hostTheme;
   const update = typeof updater?.passiveSummary==='function' ? updater.passiveSummary() : { available: false, latestVersion: null };
   if(input?.usageOnly===true){
-    if(!store.serverPid&&!store.identity){try{await store.snapshot({conversationId:null,force:false,selectLatest:false});}catch{}}
+    if(!store.serverPid&&!store.identity){try{await store.snapshot({conversationId:null,force:false,selectLatest:false,orchestratorSettings});}catch{}}
     const requestedScope=(input.usageScope==='local'||input.usageScope==='account')?input.usageScope:(prefs?.usageScope||'local');
-    return {connection:store.quota?'live':'stale',groups:store.quota||[],speed:null,usage:await usage.snapshot({sync:false,scope:requestedScope,groups:store.quota}),preferences:prefs,theme,integration:integration.health,update};
+    return {connection:store.quota?'live':'stale',groups:store.quota||[],speed:null,usage:await usage.snapshot({sync:false,scope:requestedScope,groups:store.quota}),preferences:prefs,theme,orchestratorSettings,integration:integration.health,update};
   }
-  const base=await store.snapshot(input);if(input?.usageSync===true)void usage.sync(true);
+  const remoteHost = sanitizeRemoteHost(input?.remoteHost);
+  if (remoteHost) {
+    const settings = runtimeSettings();
+    const resolved = resolveRemoteEndpoint(remoteHost, settings);
+    if (resolved && (input?.force === true || !remoteBackoff.isCoolingDown(resolved.endpoint.origin))) {
+      const remoteRes = await fetchRemoteMetrics(resolved.endpoint, input);
+      if (remoteRes.ok) {
+        remoteBackoff.markOk(resolved.endpoint.origin);
+        let localBase = null;
+        if (!Array.isArray(remoteRes.data?.groups) || !remoteRes.data.groups.length) {
+          localBase = await store.snapshot({ conversationId: null, force: false, selectLatest: false, orchestratorSettings }).catch(() => null);
+        }
+        return mergeRemoteMetrics({
+          remoteData: remoteRes.data,
+          localBase,
+          remoteHost,
+          liveComposerModel,
+          transport: 'loopback-bridge',
+          preferences: prefs,
+          theme,
+          orchestratorSettings,
+          integration: integration.health,
+          update,
+        });
+      }
+      remoteBackoff.markFailed(resolved.endpoint.origin);
+    }
+    if (typeof input?.fetchRemoteTrajectory === 'function' && input?.conversationId) {
+      const projected = await input.fetchRemoteTrajectory(input.conversationId).catch(() => null);
+      const normalized = normalizeRendererTrajectory(projected, input.conversationId);
+      if (normalized) {
+        const speed = trajectoryMetrics(normalized, null, { orchestratorSettings });
+        if (speed && (speed.requests > 0 || speed.steps > 0 || speed.context)) {
+          if (speed.context) {
+            const comp = compositionMetrics({
+              context: speed.context,
+              steps: normalized.trajectory.steps,
+              generators: normalized.trajectory.generatorMetadata,
+              hostUsage: normalized.hostUsage || null,
+            });
+            if (comp) speed.contextComposition = comp;
+          }
+          speed.conversationId = input.conversationId.toLowerCase();
+          const localBase = await store.snapshot({ conversationId: null, force: input?.force === true, quotaRefresh: input?.quotaRefresh === true, selectLatest: false, orchestratorSettings }).catch(() => null);
+          return mergeRemoteMetrics({
+            remoteData: { connection: 'live', groups: [], speed },
+            localBase,
+            remoteHost,
+            liveComposerModel,
+            transport: 'renderer-rpc',
+            preferences: prefs,
+            theme,
+            orchestratorSettings,
+            integration: integration.health,
+            update,
+          });
+        }
+      }
+    }
+    const localBase = await store.snapshot({ conversationId: null, force: input?.force === true, quotaRefresh: input?.quotaRefresh === true, selectLatest: false, orchestratorSettings }).catch(() => null);
+    return buildRemoteFallbackMetrics({
+      localBase,
+      remoteHost,
+      reason: resolved ? 'unreachable' : 'unconfigured',
+      preferences: prefs,
+      theme,
+      orchestratorSettings,
+      integration: integration.health,
+      update,
+    });
+  }
+  const base=await store.snapshot({...input,orchestratorSettings});if(input?.usageSync===true)void usage.sync(true);
   const requestedScope=(input?.usageScope==='local'||input?.usageScope==='account')?input.usageScope:(prefs?.usageScope||'local');
-  return {...base,...(liveComposerModel?{composerModel:liveComposerModel}:{}),usage:await usage.snapshot({sync:input?.usageSync===true,scope:requestedScope,groups:base.groups}),preferences:prefs,theme,integration:integration.health,update};
+  return {...base,...(liveComposerModel?{composerModel:liveComposerModel}:{}),usage:await usage.snapshot({sync:input?.usageSync===true,scope:requestedScope,groups:base.groups}),preferences:prefs,theme,orchestratorSettings,integration:integration.health,update};
 };
 const sessionAudit = async input => {
   if (ownership && !await ownership.isOwner()) throw Error('Sidecar ownership changed');
@@ -86,19 +178,21 @@ const sessionInsights = async input => {
     status: ['all', 'active', 'archived'].includes(input?.status) ? input.status : 'all',
     sort: ['recent', 'tokens', 'context', 'cost'].includes(input?.sort) ? input.sort : 'recent',
     query: typeof input?.query === 'string' ? input.query.slice(0, 80) : '',
+    date: typeof input?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : '',
   });
 };
 const usageSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','usage-ui.cjs'),'utf8');return `window.__agPulseUsageFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};
 const updateSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','update-ui.cjs'),'utf8');return `window.__agPulseUpdateFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};
 const contextLimitSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','context-limit.cjs'),'utf8');return `window.__agPulseContextLimitFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};
 const hostI18nSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','host-i18n.cjs'),'utf8');let dict={};try{dict=JSON.parse(readFileSync(join(HERE,'..','..','compat','host-i18n-dict.json'),'utf8').replace(/^\uFEFF/,''));}catch{}return `window.__agPulseHostI18nDict=${JSON.stringify(dict)};window.__agPulseHostI18nFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};
+const hostSettingsSource=()=>{const s=readFileSync(join(HERE,'..','..','compat','host-settings.cjs'),'utf8');return `window.__agPulseVersion=${JSON.stringify(pluginVersion)};window.__agPulseHostSettingsFactory=(${s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,'')});`;};
 const staticFiles = { '/': ['index.html', 'text/html'], '/styles.css': ['styles.css', 'text/css'], '/format.mjs': ['format.mjs', 'text/javascript'] };
 const inlineSource=()=>{
   const file=readFileSync(join(HERE,'..','..','compat','inline-widget.cjs'),'utf8');
   const i18n=readFileSync(join(HERE,'..','..','compat','i18n.cjs'),'utf8');
   const theme=readFileSync(join(HERE,'..','..','compat','theme.cjs'),'utf8');
   const extract=s=>s.slice(s.indexOf('module.exports = ')+'module.exports = '.length).trim().replace(/;$/,'');
-  return updateSource()+usageSource()+hostI18nSource()+contextLimitSource()+`window.__agPulseI18nFactory=(${extract(i18n)});window.__agPulseThemeFactory=(${extract(theme)});(${extract(file)})();`;
+  return updateSource()+usageSource()+hostI18nSource()+hostSettingsSource()+contextLimitSource()+`window.__agPulseI18nFactory=(${extract(i18n)});window.__agPulseThemeFactory=(${extract(theme)});(${extract(file)})();`;
 };
 const i18nModule=()=>{const s=readFileSync(join(HERE,'..','..','compat','i18n.cjs'),'utf8');return 'export const createI18n='+s.slice(s.indexOf('module.exports = ')+'module.exports = '.length);};
 const themeModule=()=>{const s=readFileSync(join(HERE,'..','..','compat','theme.cjs'),'utf8');return 'export const createTheme='+s.slice(s.indexOf('module.exports = ')+'module.exports = '.length);};
@@ -138,6 +232,19 @@ const syncLaunchConfig = async (force = false) => {
   }
   return cachedLaunch;
 };
+const RENDERER_FILES=[join(HERE,'..','..','compat','i18n.cjs'),join(HERE,'..','..','compat','inline-widget.cjs'),join(HERE,'..','..','compat','theme.cjs'),join(HERE,'..','..','compat','host-settings.cjs'),join(HERE,'..','..','compat','context-limit.cjs')];
+let cachedSourceStamp='',cachedRendererCode='';
+const rendererSource=()=>{
+  try{
+    const parts=RENDERER_FILES.map(f=>readFileSync(f,'utf8'));
+    const stamp=parts.join('\0');
+    if(stamp!==cachedSourceStamp||!cachedRendererCode){
+      cachedRendererCode=makeRendererSource(parts[0],parts[1],parts[2],ownership?.token,ownership?.startedAt,updateSource()+usageSource()+hostI18nSource()+hostSettingsSource()+contextLimitSource());
+      cachedSourceStamp=stamp;
+    }
+  }catch{}
+  return cachedRendererCode;
+};
 const integration = new RuntimeUi({
   // Composer identity is authoritative. Unknown/new inline inputs request quota
   // only; SDK/HTTP panels keep the store's automatic most-recent selection.
@@ -148,14 +255,24 @@ const integration = new RuntimeUi({
   preferences,
   updater,
   owner:ownership?.token,owns:()=>ownership?ownership.isOwner():true,
-  source: makeRendererSource(readFileSync(join(HERE,'..','..','compat','i18n.cjs'),'utf8'),readFileSync(join(HERE,'..','..','compat','inline-widget.cjs'),'utf8'),readFileSync(join(HERE,'..','..','compat','theme.cjs'),'utf8'),ownership?.token,ownership?.startedAt,updateSource()+usageSource()+hostI18nSource()+contextLimitSource()),
+  source: rendererSource(),
+  sourceForTarget: rendererSource,
   dataDir: paths.data,
   enabled: () => { const s = runtimeSettings(); return s.enabled !== false && s.inline !== false && s.mode !== 'legacy'; },
   onTargets: () => { missingPortTicks = 0; },
   diagnoseError: async error => {
     if (error?.code !== 'ENOENT') { missingPortTicks = 0; return null; }
+    const hostResources = resolveHostResources();
+    if (isRemoteHeadlessHost({ server: store.client?.server, hasLocalHostApp: Boolean(hostResources) })) {
+      missingPortTicks = 0;
+      return {
+        state: 'unavailable',
+        reason: 'remote-hub',
+        message: 'Running in a remote SSH/WSL hub; the inline composer widget requires a local desktop renderer, while the side panel remains available.',
+      };
+    }
     missingPortTicks++;
-    const host = await inspectHostArchive(resolveHostResources());
+    const host = await inspectHostArchive(hostResources);
     const launch = await syncLaunchConfig();
     if (host.requiresDebugFlag || (missingPortTicks >= 2 && store.serverPid)) {
       const configured = Boolean(launch?.configured);
@@ -193,7 +310,9 @@ const relaunchHost = async reason => {
 if (process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
   const { SidecarApp, Response } = await loadSidecarSdk();
   if(!await ownership.claim())process.exit(0);
-  void syncLaunchConfig(true).catch(() => {});
+  if (!isRemoteHeadlessHost({ server: store.client?.server, hasLocalHostApp: Boolean(resolveHostResources()) })) {
+    void syncLaunchConfig(true).catch(() => {});
+  }
   const app = new SidecarApp();
   for (const [path, [file, type]] of Object.entries(staticFiles)) app.api(path, () => new Response(path==='/'?panelPageSource():readFileSync(join(HERE, file), 'utf8'), { contentType: type,headers:{'Cache-Control':'no-store'} }), 'GET');
   app.page('/app.js',()=>new Response(panelAppSource(),{contentType:'application/javascript',headers:{'Cache-Control':'no-store'}}));
@@ -203,7 +322,7 @@ if (process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
   app.api('/theme.css',()=>new Response(themeCss(),{contentType:'text/css'}),'GET');
   app.api('/api/metrics', data => metrics({ conversationId: data.conversationId || null, force: data.force === true || data.force === '1', quotaRefresh: data.quotaRefresh === true || data.quotaRefresh === '1', ...(data.contextDetail === true || data.contextDetail === '1' ? { contextDetail: true } : {}), ...(data.usageSync === true || data.usageSync === '1' ? { usageSync: true } : {}), ...(data.usageOnly === true || data.usageOnly === '1' ? { usageOnly: true } : {}), ...(data.usageScope === 'local' || data.usageScope === 'account' ? { usageScope: data.usageScope } : {}) }), 'GET');
   app.api('/api/session-audit', data => sessionAudit({ conversationId: data.conversationId || null, force: data.force === true || data.force === '1' }), 'GET');
-  app.api('/api/insights', data => sessionInsights({ force: data.force === true || data.force === '1', status: data.status, sort: data.sort, query: data.query }), 'GET');
+  app.api('/api/insights', data => sessionInsights({ force: data.force === true || data.force === '1', status: data.status, sort: data.sort, query: data.query, date: data.date }), 'GET');
   app.api('/api/integration', () => integration.health, 'GET');
   app.api('/api/preferences',()=>preferences.snapshot(),'GET');
   app.api('/api/preferences',async data=>{try{const saved=await preferences.set(data);void integration.pushPreferences?.(saved);return saved;}catch{return new Response(JSON.stringify({error:'Language preference could not be saved'}),{status:400,contentType:'application/json'});}},'POST');
@@ -214,10 +333,19 @@ if (process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
   },'POST');
   app.run();
   integration.start();
+  const bridgePort = validateBridgePort(process.env.AG_PULSE_REMOTE_BRIDGE_PORT ?? runtimeSettings().remoteBridgePort);
+  const remoteBridge = bridgePort
+    ? startRemoteBridgeServer({
+        port: bridgePort,
+        metrics,
+        health: () => ({ ok: true, mode: 'sidecar-bridge', port: bridgePort }),
+      })
+    : null;
   const passiveUpdateBoot=setTimeout(()=>{if(owns()&&typeof updater?.checkPassive==='function')void updater.checkPassive().catch(()=>{});},4000);passiveUpdateBoot.unref?.();
-  const passiveUpdateTimer=setInterval(()=>{if(owns()&&typeof updater?.checkPassive==='function')void updater.checkPassive().catch(()=>{});},6*60*60*1000);passiveUpdateTimer.unref?.();
+  const passiveUpdateTimer=setInterval(()=>{if(owns()&&typeof updater?.checkPassive==='function')void updater.checkPassive().catch(()=>{});},5*60*1000);passiveUpdateTimer.unref?.();
   const shutdown=async()=>{
     clearTimeout(passiveUpdateBoot);clearInterval(passiveUpdateTimer);
+    try { remoteBridge?.close(); } catch {}
     auditService.dispose();insightsScanner.dispose();usage.dispose();store.dispose();
     const exitTimer=setTimeout(()=>process.exit(0),2000);exitTimer.unref();
     await integration.stop();ownership.stop();process.exit(0);
@@ -289,6 +417,7 @@ if (process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
           status: url.searchParams.get('status') || 'all',
           sort: url.searchParams.get('sort') || 'recent',
           query: url.searchParams.get('query') || '',
+          date: url.searchParams.get('date') || '',
         });
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(result));

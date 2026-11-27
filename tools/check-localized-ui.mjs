@@ -11,7 +11,7 @@ const extract=s=>s.slice(s.indexOf('module.exports = ')+17).trim().replace(/;$/,
 const install=`window.__agPulseI18nFactory=(${extract(sources[0])});window.__agPulseThemeFactory=(${extract(sources[1])});(${extract(sources[2])})();`;
 const id='11111111-1111-1111-1111-111111111111';
 const metrics={connection:'live',groups:['gemini','3p'].map((id,i)=>({id,name:i?'Claude / GPT':'Gemini',windows:{'5h':{available:true,remaining:i?.42:.83},weekly:{available:true,remaining:.6}}})),
-  speed:trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[{chatModel:{modelDisplayName:'Gemini 3.8 Flash High',chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:112000,maxContextTokens:256000}},usage:{inputTokens:1000,responseOutputTokens:100,outputTokens:100,cacheReadTokens:100,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},streamingDuration:'2s'}}]}})};
+  speed:trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[{chatModel:{modelDisplayName:'Gemini 3.8 Flash High',chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:112000,maxContextTokens:256000}},usage:{inputTokens:111800,responseOutputTokens:100,outputTokens:100,cacheReadTokens:100,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},streamingDuration:'2s'}}]}})};
 const escape=s=>s.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;');
 const wrap=(html,depth)=>{for(let i=0;i<depth;i++)html='<div>'+html+'</div>';return html;};
 function composer({lang='zh',role='combobox',testid=true,label=true,depth=0,model='Claude Sonnet',key='main',voice=false}={}){

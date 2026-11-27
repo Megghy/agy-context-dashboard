@@ -195,15 +195,18 @@ try {
       assert.equal(await scope.locator('#cache-write-row').isVisible(),true);
       assert.deepEqual(await scope.locator('#cache-card dl>div').evaluateAll(rows=>rows.slice(-2).map(row=>row.id)),['task-own-row','task-subagents-row']);
       assert.equal((await scope.locator('#cache-card').textContent()).includes('≥'),false);
+      assert.equal(await scope.locator('#cache-card .hero-label').textContent(),'Token · 缓存');
       await page.screenshot({path:join(output,mode+'-ready-zh-CN.png')});
 
       await chooseLanguage('zh-TW');assert.equal(await scope.locator('#task-own-row dt').textContent(),'目前代理');
+      assert.equal(await scope.locator('#cache-card .hero-label').textContent(),'Token · 快取');
       snapshots[ids.root]=task(own,[child],{state:'partial',subagents:2,loadedSubagents:1});
       await expectText('cache-note','部分子代理暫時無法讀取');await expectText('task-subagents','5,900 toks');
       await expectMarker(false,'僅目前代理；子代理統計暫時無法取得');
       await expectText('cache-coverage','11,400');
       assert.equal(await scope.locator('#cache-write-row').isVisible(),false);
       await chooseLanguage('en');await expectText('cache-note','Some subagents unavailable');
+      assert.equal(await scope.locator('#cache-card .hero-label').textContent(),'Token · Cache');
       assert.equal(await scope.locator('#task-own-row dt').textContent(),'Current agent');
       await expectOwn(own);
       snapshots[ids.root]=task(own,[child,leaf]);await expectText('cache-coverage','12,600');

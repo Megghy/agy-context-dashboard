@@ -88,8 +88,8 @@ test('trend uses total input per request, dedupes records and anchors markers',(
   // Total basis: uncached + cache read (+ write). Duplicate record counts once.
   assert.deepEqual(comp.trend.points.map(point=>point.inputTokens),[4000,500,200]);
   assert.deepEqual(comp.trend.markers,[
-    {pointIndex:1,kind:'compaction',before:4000,after:500},
-    {pointIndex:2,kind:'checkpoint',before:500,after:200},
+    {pointIndex:1,kind:'compaction',before:4000,after:500,peakFraction:0.004,peak:false},
+    {pointIndex:2,kind:'checkpoint',before:500,after:200,peakFraction:0.0005,peak:false},
   ]);
   assert.equal(comp.trend.totalRequests,3);assert.equal(comp.trend.totalMarkers,2);
 });
@@ -104,6 +104,24 @@ test('trend caps the window to recent requests and keeps only visible markers',(
   const late=compositionMetrics({context,steps:[...steps,{type:'CORTEX_STEP_TYPE_COMPACTION'}],generators,maxTrendPoints:6});
   assert.deepEqual(late.trend.markers.map(marker=>marker.pointIndex),[6]); // past the last point; renderer clamps to the edge
   assert.equal(late.trend.markers[0].before,1000);assert.equal(late.trend.markers[0].after,null);
+  assert.equal(late.trend.markers[0].peakFraction,0.001);assert.equal(late.trend.markers[0].peak,false);
+});
+
+test('trend annotates compaction trigger peaks against the window (issue #80)',()=>{
+  const chat=(messageId,input,indices)=>({stepIndices:indices,chatModel:{usage:{messageId,inputTokens:String(input),apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}}});
+  // Peak before compaction at 94.8% and 40% of a 1,000,000-token window.
+  const generators=[chat('a',948000,[0]),chat('b',400000,[2])];
+  const steps=[
+    {type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE'},
+    {type:'CORTEX_STEP_TYPE_COMPACTION'},
+    {type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE'},
+    {type:'CORTEX_STEP_TYPE_COMPACTION'},
+  ];
+  const comp=compositionMetrics({context:{usedTokens:948000,maxTokens:1000000},steps,generators});
+  assert.deepEqual(comp.trend.markers,[
+    {pointIndex:1,kind:'compaction',before:948000,after:400000,peakFraction:0.948,peak:true},
+    {pointIndex:2,kind:'compaction',before:400000,after:null,peakFraction:0.4,peak:false},
+  ]);
 });
 
 test('trajectory projection retains per-step usage buckets only',()=>{
@@ -307,7 +325,7 @@ test('trend dedup skips duplicate request ids even when usage signature differs'
   assert.deepEqual(comp.trend.points.map(p=>p.inputTokens),[1000,2000,3000]);
   assert.equal(comp.trend.totalRequests,3);
   assert.equal(comp.trend.totalMarkers,1);
-  assert.deepEqual(comp.trend.markers,[{pointIndex:2,kind:'compaction',before:2000,after:3000}]);
+  assert.deepEqual(comp.trend.markers,[{pointIndex:2,kind:'compaction',before:2000,after:3000,peakFraction:0.002,peak:false}]);
 });
 
 test('tokenBaseMetrics preserves groups contract and exposes nested drilldown + rules budget',()=>{
@@ -398,10 +416,12 @@ test('MetricsStore lazily calls streamContextWindowUsage on contextDetail and ca
   t.after(()=>store.dispose());
   const plain=await store.snapshot({conversationId:GUID});
   assert.equal(streamCalls,0);
+  assert.equal(plain.speed.context.usedTokens,4500);
   assert.equal(plain.accountCredits.availablePromptCredits,500);
   assert.equal(plain.accountCredits.availableFlowCredits,100);
   const detailed=await store.snapshot({conversationId:GUID,contextDetail:true});
   assert.equal(streamCalls,1);
+  assert.equal(detailed.speed.context.usedTokens,100000);
   assert.equal(detailed.speed.contextComposition.source,'host-token-groups');
   assert.equal(detailed.speed.contextComposition.customization.available,true);
   assert.ok(detailed.speed.estimatedCost.hasPriced);

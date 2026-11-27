@@ -25,7 +25,16 @@ const tokenBase = tokenBaseMetrics({
     totalTokens: 16489,
     groups: [
       { name: 'Rules', type: 'TOKEN_TYPE_RULES', numTokens: 6642, children: [{ name: '/Users/mac/.gemini/AGENTS.md', numTokens: 2767 }, { name: '/Users/mac/.gemini/config/rules/team-resident.md', numTokens: 3875 }] },
-      { name: 'Skills', type: 'TOKEN_TYPE_SKILLS', numTokens: 9347, children: [{ name: 'tabbit', numTokens: 210 }, { name: 'team-github-bilingual', numTokens: 185 }] },
+      { name: 'Skills', type: 'TOKEN_TYPE_SKILLS', numTokens: 9347, children: [
+        { name: 'tabbit', numTokens: 210 },
+        { name: 'team-github-bilingual', numTokens: 185 },
+        { name: 'lark-drive', numTokens: 170 },
+        { name: 'lark-wiki', numTokens: 160 },
+        { name: 'openviking-skills', numTokens: 150 },
+        { name: 'ov-kanban', numTokens: 140 },
+        { name: 'team-retro', numTokens: 130 },
+        { name: 'team-orca-collab', numTokens: 120 },
+      ] },
       { name: 'Subagents', type: 'TOKEN_TYPE_SUBAGENTS', numTokens: 340, children: [{ name: 'research', numTokens: 120 }] },
       { name: 'Mcp Tools', type: 'TOKEN_TYPE_MCP_TOOLS', numTokens: 160, children: [{ name: 'openviking', numTokens: 102, children: [{ name: 'find', numTokens: 2 }, { name: 'remember', numTokens: 4 }] }] },
     ],
@@ -142,11 +151,14 @@ const insightsPayload = {
     totalTokens: (i + 1) * 50000,
     estimatedCostUsd: (i + 1) * 0.15,
   })),
-  heatmap: Array.from({ length: 112 }, (_, i) => ({
-    date: `2026-08-${String((i % 28) + 1).padStart(2, '0')}`,
-    sessions: i % 5 === 0 ? 3 : 1,
-    tokens: (i % 7) * 40000,
-  })),
+  heatmap: Array.from({ length: 112 }, (_, i) => {
+    const d = new Date(Date.UTC(2026, 7, 3 + i));
+    return {
+      date: d.toISOString().slice(0, 10),
+      sessions: i >= 109 ? (i === 111 ? 3 : 2) : (i % 17 === 0 ? 1 : 0),
+      tokens: i >= 109 ? (i - 108) * 60000 : (i % 17 === 0 ? 25000 : 0),
+    };
+  }),
   composition: { uncached: 108000, cacheRead: 432000, cacheWrite: 0, output: 8400 },
   distributions: {
     projects: [{ name: 'agy-context-dashboard', sessions: 2, tokens: 540000 }],
@@ -157,8 +169,8 @@ const insightsPayload = {
   },
   totalMatchingSessions: 2,
   sessions: [
-    { id: cidA, title: 'Session Alpha', project: 'agy-context-dashboard', model: 'Gemini 4 Neon (High)', status: 'IDLE', archived: false, rounds: 5, steps: 20, totalTokens: 320000, currentContextTokens: 120000, cacheHitRate: 0.8, estimatedCostUsd: 0.42 },
-    { id: cidB, title: 'Session Beta', project: 'agy-context-dashboard', model: 'Claude Sonnet 4.6', status: 'ARCHIVED', archived: true, rounds: 4, steps: 15, totalTokens: 220000, currentContextTokens: 90000, cacheHitRate: 0.8, estimatedCostUsd: 0.86 },
+    { id: cidA, title: 'Session Alpha', project: 'agy-context-dashboard', model: 'Gemini 4 Neon (High)', status: 'IDLE', archived: false, rounds: 5, steps: 20, totalTokens: 320000, currentContextTokens: 120000, cacheHitRate: 0.8, estimatedCostUsd: 0.42, activeDates: ['2026-11-22'] },
+    { id: cidB, title: 'Session Beta', project: 'agy-context-dashboard', model: 'Claude Sonnet 4.6', status: 'ARCHIVED', archived: true, rounds: 4, steps: 15, totalTokens: 220000, currentContextTokens: 90000, cacheHitRate: 0.8, estimatedCostUsd: 0.86, activeDates: ['2026-11-20'] },
   ],
   cacheInfo: { totalScanned: 2, parsedNow: 0, cacheHits: 2, scanMs: 12, shardCount: 64 },
 };
@@ -253,6 +265,7 @@ window.agPulseHost={
 
 let forceDegradedCidB = false;
 let omitUsage = false;
+let tightBudgetTokens = null;
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -306,7 +319,8 @@ const server = createServer(async (req, res) => {
     }
     let speed = sessions[cid] || sessions[cidA];
     if (contextDetail) {
-      speed = { ...speed, contextComposition: attachHostContextUsage(attachTokenBase(speed.contextComposition, tokenBase), hostUsage) };
+      const tb = tightBudgetTokens !== null ? { ...tokenBase, totalTokens: tightBudgetTokens } : tokenBase;
+      speed = { ...speed, contextComposition: attachHostContextUsage(attachTokenBase(speed.contextComposition, tb), hostUsage) };
     }
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
@@ -331,10 +345,14 @@ const server = createServer(async (req, res) => {
   if (url.pathname === '/api/insights') {
     const status = url.searchParams.get('status') || 'all';
     const sort = url.searchParams.get('sort') || 'recent';
-    calls.insights.push({ status, sort });
-    const filtered = status === 'archived' ? insightsPayload.sessions.filter(s => s.archived) : insightsPayload.sessions;
+    const date = url.searchParams.get('date') || '';
+    calls.insights.push({ status, sort, date });
+    let filtered = status === 'archived' ? insightsPayload.sessions.filter(s => s.archived) : insightsPayload.sessions;
+    if (date) filtered = filtered.filter(s => Array.isArray(s.activeDates) && s.activeDates.includes(date));
+    const total = sort === 'cost' && !date ? 201 : filtered.length;
+    const rows = sort === 'cost' && !date ? filtered.slice(0, 1) : filtered;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ ...insightsPayload, sessions: filtered, totalMatchingSessions: filtered.length }));
+    res.end(JSON.stringify({ ...insightsPayload, sessions: rows, totalMatchingSessions: total }));
     return;
   }
   res.writeHead(404); res.end();
@@ -373,14 +391,49 @@ try {
 
   await page.locator('#token-base-toggle').click();
   await page.locator('#token-base-tree').waitFor({ state: 'visible' });
-  assert.match(await page.locator('#token-base-tree').textContent(), /~\/\.gemini\/config\/rules\/team-resident\.md/);
+  assert.equal(await page.locator('#token-base-toggle-label').textContent(), 'Rules & skills config');
+  assert.equal(await page.locator('#token-base-toggle-summary').getAttribute('data-level'), null);
+  assert.equal(await page.locator('#token-base-tree .is-danger').count(), 0);
+  const normalTone = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--pulse-accent)';
+    document.body.append(probe);
+    const accent = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      accent,
+      summary: getComputedStyle(document.getElementById('token-base-toggle-summary')).color,
+      budget: getComputedStyle(document.querySelector('#token-base-tree .drilldown-budget-pct')).color,
+    };
+  });
+  assert.equal(normalTone.summary, normalTone.accent);
+  assert.equal(normalTone.budget, normalTone.accent);
+  assert.equal(await page.locator('#token-base-tree .drilldown-budget-card').count(), 2);
+  const firstRule = await page.locator('#token-base-tree .drilldown-item').first().evaluate(el => ({
+    name: el.querySelector('.drilldown-item-name')?.textContent,
+    sub: el.querySelector('.drilldown-item-sub')?.textContent,
+    title: el.getAttribute('title'),
+  }));
+  assert.deepEqual(firstRule, { name: 'team-resident.md', sub: '~/.gemini/config/rules', title: '/Users/mac/.gemini/config/rules/team-resident.md' });
+  await page.locator('.drilldown-group-btn', { hasText: 'Skills' }).click();
+  const skillsBlock = page.locator('#token-base-tree .drilldown-group').filter({ hasText: 'Skills' });
+  assert.equal(await skillsBlock.locator('.drilldown-item').count(), 6);
+  assert.equal(await skillsBlock.locator('.drilldown-more-btn').textContent(), 'Show 2 more');
+  await skillsBlock.locator('.drilldown-more-btn').focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await skillsBlock.locator('.drilldown-item').count(), 8);
+  assert.equal(await skillsBlock.locator('.drilldown-more-btn').textContent(), 'Show less');
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('drilldown-more-btn')), true);
+  await skillsBlock.locator('.drilldown-more-btn').click();
+  assert.equal(await skillsBlock.locator('.drilldown-item').count(), 6);
   await page.locator('.drilldown-group-btn', { hasText: 'MCP tools' }).click();
   await page.locator('.drilldown-group-btn', { hasText: 'openviking' }).click();
   assert.match(await page.locator('#token-base-tree').textContent(), /remember/);
 
   await page.locator('#trend-mode-delta').click();
   assert.ok(await page.locator('#panel-trend-svg .trend-bar-neg').count() >= 1);
-  assert.match(await page.locator('#panel-trend-markers').textContent(), /Compaction: 120K → 35K \(-85K reclaimed\)/);
+  assert.match(await page.locator('#panel-trend-markers').textContent(), /Compaction: 120K → 35K/);
+  assert.match((await page.locator('#panel-trend-markers .trend-marker-badge').first().getAttribute('title')) || '', /\(-85K reclaimed\)/);
 
   // 3. On-Demand Session Audit (Files -> step jump, Commands, Steps + filters)
   assert.equal(calls.audit.length, 0);
@@ -414,16 +467,24 @@ try {
   await page.waitForFunction(() => Boolean(document.querySelector('#usage-embed > div')?.shadowRoot?.querySelector('#heat button')));
   const activityCheck = await page.evaluate(() => {
     const sr = document.querySelector('#usage-embed > div').shadowRoot;
+    const wrap = sr.querySelector('.heat-wrap');
+    const firstBtn = sr.querySelector('#heat button');
+    const r = firstBtn?.getBoundingClientRect();
     return {
       overviewHidden: sr.getElementById('overview').hidden,
       detailsHidden: sr.getElementById('details').hidden,
       heatCount: sr.querySelectorAll('#heat button').length,
+      heatOverflow: wrap ? wrap.scrollWidth > wrap.clientWidth : true,
+      cellW: r ? r.width : 0,
+      cellDiff: r ? Math.abs(r.width - r.height) : 99,
       tabsHidden: sr.querySelector('.tabs-bar')?.dataset.hideTabs,
     };
   });
   assert.equal(activityCheck.overviewHidden, false);
   assert.equal(activityCheck.detailsHidden, true);
-  assert.ok(activityCheck.heatCount >= 365);
+  assert.ok(activityCheck.heatCount >= 84 && activityCheck.heatCount <= 140 && activityCheck.heatCount % 7 === 0, `Expected responsive 12-20 week window in embedded sidebar, got ${activityCheck.heatCount}`);
+  assert.equal(activityCheck.heatOverflow, false, 'Embedded Token activity heatmap must not overflow horizontally');
+  assert.ok(activityCheck.cellW >= 12 && activityCheck.cellDiff <= 1.5, `Expected crisp square cells, got ${JSON.stringify(activityCheck)}`);
   assert.equal(activityCheck.tabsHidden, 'true');
 
   // Clicking "View breakdown" inside embedded Activity switches top-level panel tab to By model
@@ -438,7 +499,8 @@ try {
     };
   });
   assert.equal(modelsText.detailsHidden, false);
-  assert.match(modelsText.tableText, /Gemini 4 Hydrogen \(XHigh\)/);
+  assert.match(modelsText.tableText, /Gemini 4 Hydrogen/);
+  assert.doesNotMatch(modelsText.tableText, /\(XHigh\)/);
   assert.match(modelsText.tableText, /Claude Sonnet 4\.6/);
   assert.match(modelsText.totalsText, /480K/);
 
@@ -459,9 +521,103 @@ try {
   assert.match(await page.locator('#insights-kpis').textContent(), /540K/);
   assert.match(await page.locator('#insights-kpis').textContent(), /\$1\.28/);
   assert.match(await page.locator('#insights-dist-skills').textContent(), /tabbit/);
+  const distEn = await page.evaluate(() => ({
+    subs: [
+      document.getElementById('insights-dist-projects-sub')?.textContent?.trim() || '',
+      document.getElementById('insights-dist-skills-sub')?.textContent?.trim() || '',
+      document.getElementById('insights-dist-tools-sub')?.textContent?.trim() || '',
+      document.getElementById('insights-dist-commands-sub')?.textContent?.trim() || '',
+    ],
+    items: [...document.querySelectorAll('.insights-dist-card .dist-item')].length,
+    barWidths: [...document.querySelectorAll('.insights-dist-card .dist-bar > i')].map(el => el.getBoundingClientRect().width),
+    projectsText: document.getElementById('insights-dist-projects')?.textContent || '',
+    skillsText: document.getElementById('insights-dist-skills')?.textContent || '',
+    toolsText: document.getElementById('insights-dist-tools')?.textContent || '',
+    commandsText: document.getElementById('insights-dist-commands')?.textContent || '',
+  }));
+  assert.ok(distEn.subs.every(Boolean), `Expected non-empty dist subtotals in en: ${JSON.stringify(distEn.subs)}`);
+  assert.match(distEn.subs[0], /projects.*toks/);
+  assert.match(distEn.subs[1], /skills.*runs/);
+  assert.match(distEn.subs[2], /tools.*calls/);
+  assert.match(distEn.subs[3], /cmds.*runs/);
+  assert.match(distEn.projectsText, /sess.*toks/);
+  assert.match(distEn.skillsText, /runs.*sess/);
+  assert.match(distEn.toolsText, /calls/);
+  assert.match(distEn.commandsText, /runs/);
+  assert.equal(distEn.items, 6);
+  assert.ok(distEn.barWidths.length === 6 && distEn.barWidths.every(w => w > 0), `Expected positive dist-bar widths in en: ${JSON.stringify(distEn.barWidths)}`);
 
   await page.locator('#heatmap-metric-tokens').click();
   assert.equal(await page.locator('#heatmap-metric-tokens').getAttribute('aria-pressed'), 'true');
+  const hmGeometry = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('#insights-heatmap-grid button.heatmap-cell')];
+    const rects = cells.map(c => c.getBoundingClientRect());
+    const maxDiff = Math.max(...rects.map(r => Math.abs(r.width - r.height)));
+    const minW = Math.min(...rects.map(r => r.width));
+    return {
+      count: cells.length,
+      maxDiff,
+      minW,
+      meta: document.getElementById('insights-heatmap-meta')?.textContent || '',
+      months: [...document.querySelectorAll('#insights-heatmap-months span')].map(s => [s.textContent, s.style.gridColumn]),
+      weekdays: [...document.querySelectorAll('#insights-heatmap-weekdays span')].map(s => s.textContent).filter(Boolean),
+    };
+  });
+  assert.equal(hmGeometry.count, 112);
+  assert.ok(hmGeometry.maxDiff <= 1.2, `Heatmap cells must be square, maxDiff=${hmGeometry.maxDiff}`);
+  assert.ok(hmGeometry.minW >= 10, `Heatmap cells must fit crisply, minW=${hmGeometry.minW}`);
+  assert.match(hmGeometry.meta, /Streak 3d/);
+  assert.match(hmGeometry.meta, /180K tok/);
+  assert.ok(hmGeometry.months.length >= 2);
+  assert.equal(hmGeometry.months.find(([m]) => m === 'Sep')?.[1], '5');
+  assert.deepEqual(hmGeometry.weekdays, ['M', 'W', 'F']);
+
+  const targetCell = page.locator('#insights-heatmap-grid button.heatmap-cell[data-date="2026-11-22"]');
+  await targetCell.hover();
+  await page.locator('#insights-heatmap-tip').waitFor({ state: 'visible' });
+  assert.match(await page.locator('#insights-heatmap-tip').textContent(), /2026-11-22.*180K tok/);
+  await page.mouse.move(10, 10);
+  await targetCell.focus();
+  await page.locator('#insights-heatmap-tip').waitFor({ state: 'visible' });
+  await page.setViewportSize({ width: 280, height: 700 });
+  await page.waitForFunction(() => {
+    const tip = document.getElementById('insights-heatmap-tip');
+    if (!tip || tip.hidden) return true;
+    const r = tip.getBoundingClientRect();
+    return r.left >= 8 && r.right <= window.innerWidth;
+  }, undefined, { timeout: 2000 });
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await targetCell.focus();
+  await page.locator('#insights-heatmap-tip').waitFor({ state: 'visible' });
+  const tipBoxNarrow = await page.locator('#insights-heatmap-tip').evaluate(e => {
+    const r = e.getBoundingClientRect();
+    return { hidden: e.hidden, left: r.left, right: r.right, iw: window.innerWidth };
+  });
+  assert.equal(tipBoxNarrow.hidden, false);
+  assert.ok(tipBoxNarrow.left >= 8 && tipBoxNarrow.right <= tipBoxNarrow.iw, `Tooltip must stay in viewport: ${JSON.stringify(tipBoxNarrow)}`);
+  await page.setViewportSize({ width: 460, height: 700 });
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await targetCell.click();
+  assert.equal(await targetCell.getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#insights-date-filter').isVisible(), true);
+  assert.equal(await page.locator('#insights-sessions-list .session-row').count(), 1);
+  assert.match(await page.locator('#insights-sessions-list .session-row').first().textContent(), /Session Alpha/);
+  await page.locator('#insights-date-filter').click();
+  assert.equal(await page.locator('#insights-date-filter').isVisible(), false);
+  assert.equal(await page.locator('#insights-sessions-list .session-row').count(), 2);
+
+  // Verify pre-truncation (>200) date filter re-queries server with date parameter
+  await page.locator('#insights-sort').selectOption('cost');
+  await page.locator('#insights-sessions-title').filter({ hasText: '201' }).waitFor();
+  assert.equal(await page.locator('#insights-sessions-list .session-row').count(), 1);
+  await page.locator('#insights-heatmap-grid button.heatmap-cell[data-date="2026-11-20"]').click();
+  await page.locator('#insights-sessions-list .session-row').filter({ hasText: 'Session Beta' }).waitFor();
+  assert.equal(calls.insights.at(-1)?.date, '2026-11-20');
+  await page.locator('#insights-date-filter').click();
+  await page.locator('#insights-sessions-title').filter({ hasText: '201' }).waitFor();
+  await page.locator('#insights-sort').selectOption('recent');
+  await page.locator('#insights-sessions-title').filter({ hasText: 'Sessions (2)' }).waitFor();
+  assert.equal(await page.locator('#insights-sessions-list .session-row').count(), 2);
 
   await page.locator('#insights-status-filter').selectOption('archived');
   await page.locator('#insights-sessions-list .session-row').filter({ hasText: 'Session Beta' }).waitFor();
@@ -482,10 +638,10 @@ try {
       return items.map(i => [i.id, i.text]);
     }),
     [
-      ['view-activity-tab', '每日/每周活动'],
-      ['view-models-tab', '按模型用量'],
       ['view-session-tab', '当前会话'],
       ['view-insights-tab', '全局洞察'],
+      ['view-activity-tab', '每日/每周活动'],
+      ['view-models-tab', '模型用量'],
     ],
   );
   await page.locator('#view-insights-tab').click();
@@ -494,6 +650,33 @@ try {
   await page.setViewportSize({ width: 280, height: 700 });
   const overflow = await page.locator('.widget').evaluate(el => el.scrollWidth > el.clientWidth);
   assert.equal(overflow, false);
+  const distZh = await page.evaluate(() => ({
+    subs: [
+      document.getElementById('insights-dist-projects-sub')?.textContent?.trim() || '',
+      document.getElementById('insights-dist-skills-sub')?.textContent?.trim() || '',
+      document.getElementById('insights-dist-tools-sub')?.textContent?.trim() || '',
+      document.getElementById('insights-dist-commands-sub')?.textContent?.trim() || '',
+    ],
+    items: [...document.querySelectorAll('.insights-dist-card .dist-item')].length,
+    barWidths: [...document.querySelectorAll('.insights-dist-card .dist-bar > i')].map(el => el.getBoundingClientRect().width),
+    projectsText: document.getElementById('insights-dist-projects')?.textContent || '',
+    skillsText: document.getElementById('insights-dist-skills')?.textContent || '',
+    toolsText: document.getElementById('insights-dist-tools')?.textContent || '',
+    commandsText: document.getElementById('insights-dist-commands')?.textContent || '',
+    insightsOverflow: document.getElementById('insights-view').scrollWidth > document.getElementById('insights-view').clientWidth,
+  }));
+  assert.ok(distZh.subs.every(Boolean), `Expected non-empty dist subtotals in zh-CN: ${JSON.stringify(distZh.subs)}`);
+  assert.match(distZh.subs[0], /项目.*toks/);
+  assert.match(distZh.subs[1], /技能.*次/);
+  assert.match(distZh.subs[2], /工具.*次/);
+  assert.match(distZh.subs[3], /命令.*次/);
+  assert.match(distZh.projectsText, /会话.*toks/);
+  assert.match(distZh.skillsText, /次.*会话/);
+  assert.match(distZh.toolsText, /次/);
+  assert.match(distZh.commandsText, /次/);
+  assert.equal(distZh.items, 6);
+  assert.ok(distZh.barWidths.length === 6 && distZh.barWidths.every(w => w > 0), `Expected positive dist-bar widths in zh-CN: ${JSON.stringify(distZh.barWidths)}`);
+  assert.equal(distZh.insightsOverflow, false);
 
   await page.locator('#view-activity-tab').click();
   await page.locator('#usage-panel-view').waitFor({ state: 'visible' });
@@ -512,6 +695,31 @@ try {
   }));
   assert.equal(modelsZhOverflow.overflow, false);
   assert.equal(modelsZhOverflow.title, '按模型统计');
+  for (const [per, expectedCols] of [['week', 8], ['month', 6], ['day', 30]]) {
+    await page.evaluate((p) => {
+      document.querySelector('#usage-embed > div').shadowRoot.querySelector(`[data-period="${p}"]`).click();
+    }, per);
+    const periodCheck = await page.evaluate(() => {
+      const sr = document.querySelector('#usage-embed > div').shadowRoot;
+      const activeBtn = sr.getElementById('period-controls').querySelector('button[aria-pressed="true"]');
+      return {
+        cols: sr.querySelectorAll('#plot .bar-column').length,
+        activePeriod: activeBtn?.dataset.period || null,
+        firstLegend: sr.querySelector('#legend button')?.textContent || '',
+        firstRowModel: sr.querySelector('#table-body tr td')?.textContent || '',
+      };
+    });
+    assert.equal(periodCheck.cols, expectedCols, `${per} column count`);
+    assert.equal(periodCheck.activePeriod, per, `${per} aria-pressed`);
+    assert.equal(periodCheck.firstLegend, periodCheck.firstRowModel, `${per} legend sorted by usage`);
+  }
+
+  await page.locator('#view-session-tab').click();
+  await page.locator('#context-tab').click();
+  await page.locator('#token-base-tree').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#token-base-toggle-label').textContent(), '规则与技能配置');
+  assert.match(await page.locator('#token-base-tree').textContent(), /配置总预算.*规则预算/);
+  assert.equal(await page.locator('#context-card').evaluate(el => el.scrollWidth <= el.clientWidth + 1), true, '280px zh-CN drilldown tree must fit without horizontal overflow');
 
   await page.locator('#view-insights-tab').click();
   await page.locator('#insights-view').waitFor({ state: 'visible' });
@@ -573,6 +781,33 @@ try {
   await coldPage.locator('#view-models-tab').click();
   await coldPage.waitForFunction(() => (document.querySelector('#usage-embed > div')?.shadowRoot?.querySelectorAll('#plot .bar-column')?.length || 0) > 0);
   await coldPage.close();
+
+  // 9. Exact 90% threshold: 89.5% (17900/20000) stays blue, >= 90% (18600/20000) turns danger red
+  tightBudgetTokens = 17900;
+  const boundaryPage = await browser.newPage({ viewport: { width: 410, height: 680 } });
+  boundaryPage.on('pageerror', err => errors.push(err.message));
+  await boundaryPage.goto(base + '/');
+  await boundaryPage.locator('#context-tab').click();
+  await boundaryPage.locator('#token-base-toggle').waitFor({ state: 'visible' });
+  await boundaryPage.locator('#token-base-toggle').click();
+  await boundaryPage.locator('#token-base-tree').waitFor({ state: 'visible' });
+  assert.equal(await boundaryPage.locator('#token-base-toggle-summary').getAttribute('data-level'), null);
+  assert.equal(await boundaryPage.locator('#token-base-tree .is-danger').count(), 0);
+  await boundaryPage.close();
+
+  tightBudgetTokens = 18600;
+  const tightPage = await browser.newPage({ viewport: { width: 410, height: 680 } });
+  tightPage.on('pageerror', err => errors.push(err.message));
+  await tightPage.goto(base + '/');
+  await tightPage.locator('#context-tab').click();
+  await tightPage.locator('#token-base-toggle').waitFor({ state: 'visible' });
+  await tightPage.locator('#token-base-toggle').click();
+  await tightPage.locator('#token-base-tree').waitFor({ state: 'visible' });
+  assert.equal(await tightPage.locator('#token-base-toggle-summary').getAttribute('data-level'), 'danger');
+  assert.equal(await tightPage.locator('#token-base-tree .drilldown-budget-pct.is-danger').count(), 1);
+  assert.equal(await tightPage.locator('#token-base-tree .drilldown-budget-track i.is-danger').count(), 1);
+  tightBudgetTokens = null;
+  await tightPage.close();
 
   assert.deepEqual(errors, [], 'Trusted Types CSP must produce zero page errors');
   console.log(JSON.stringify({ ok: true, auditCalls: calls.audit.length, insightsCalls: calls.insights.length, pageErrors: errors }));

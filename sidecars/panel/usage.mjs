@@ -11,6 +11,7 @@ import {setImmediate as yieldToLiveRequests} from 'node:timers/promises';
 import {delegatedIds} from './delegation.mjs';
 import {collectionFailure} from './collection-state.mjs';
 const HASH=/^[a-f0-9]{64}$/,GUID=/^[a-f0-9-]{36}$/i;
+const SUMMARY_TEMP=/^\.summary-(?:all-)?[a-f0-9-]{36}\.tmp(?:-journal)?$/i,SUMMARY_STALE_MS=10*60*1000;
 const hash=value=>createHash('sha256').update(value).digest('hex');
 export const LOCAL_SCOPE=hash('ag-pulse:local-unauthenticated');
 const keys=['uncached','cacheRead','cacheWrite','output'];
@@ -148,7 +149,7 @@ const validRow=r=>r&&HASH.test(r.id)&&typeof r.model==='string'&&r.model.length<
   (r.at===null||Number.isSafeInteger(r.at)&&r.at>=0)&&keys.every(k=>r[k]===null||Number.isSafeInteger(r[k])&&r[k]>=0);
 export class UsageLedger{
   constructor(directory=join(platformPaths().data,'usage-v1'),{timeZone='Asia/Shanghai',source='desktop-local'}={}){this.directory=directory;this.timeZone=timeZone;this.source=source;}
-  _gate=Promise.resolve();_barrier=Promise.resolve();_writes=new Set();_files=new Map();usageWrites=new Map();revision=0;_cache=null;caches=new Map();diskSummaryPending=null;_diskSummaryRetry=null;diskSummaryRetries=new Map();jsonSummaryPending=new Map();
+  _gate=Promise.resolve();_barrier=Promise.resolve();_writes=new Set();_files=new Map();usageWrites=new Map();revision=0;_cache=null;caches=new Map();diskSummaryPending=null;_diskSummaryRetry=null;diskSummaryRetries=new Map();jsonSummaryPending=new Map();_sweptSummaryDirs=new Set();
   get cache(){return this._cache;}
   set cache(value){this._cache=value;if(!value)this.caches.clear();else if(value.key)this.caches.set(value.key,value);}
   get diskSummaryRetry(){return this._diskSummaryRetry;}
@@ -288,11 +289,25 @@ export class UsageLedger{
     // diskQueue independently limits expensive workers to one at a time.
     return this.enqueue(file,()=>this.mergeDisk(scope,id,input,options)).finally(()=>{this.diskWrites--;this.endUsageWrite(scope);});
   }
+  async sweepStaleSummaryTemps(dirs){
+    const cutoff=Date.now()-SUMMARY_STALE_MS;
+    for(const dir of dirs){
+      if(!dir||this._sweptSummaryDirs.has(dir))continue;
+      this._sweptSummaryDirs.add(dir);
+      let names=[];try{names=await readdir(dir);}catch{continue;}
+      for(const name of names){
+        if(!SUMMARY_TEMP.test(name))continue;
+        const target=join(dir,name);
+        try{const info=await lstat(target);if(!info.isSymbolicLink()&&info.isFile()&&info.mtimeMs<=cutoff)await unlink(target);}catch{}
+      }
+    }
+  }
   startDiskSummary(scope,now,scanRevision,cacheKey,isCurrent,options={}){
     const retry=this.diskSummaryRetries.get(cacheKey);
     if(this.diskSummaryPending||retry&&retry.at>Date.now())return;
+    const sweepDirs=scope==='all'?[this.directory,...(options.buckets||[]).filter(b=>HASH.test(b)).map(b=>join(this.directory,b))]:[this.directory,join(this.directory,scope)];
     const staging=scope==='all'?join(this.directory,'.summary-all-'+randomUUID()+'.tmp'):join(this.directory,scope,'.summary-'+randomUUID()+'.tmp');
-    this.diskSummaryPending=this.diskJob({action:'summary',scope,directory:scope==='all'?this.directory:join(this.directory,scope),buckets:options.buckets||null,quotaAccount:options.quotaAccount||null,quotaGroups:options.groupInfos||null,quotaWindowSpecs:options.specs||null,localScope:LOCAL_SCOPE,staging,now,timeZone:this.timeZone,source:this.source},{isCurrent}).then(raw=>{
+    this.diskSummaryPending=Promise.all([this.diskJob({action:'summary',scope,directory:scope==='all'?this.directory:join(this.directory,scope),buckets:options.buckets||null,quotaAccount:options.quotaAccount||null,quotaGroups:options.groupInfos||null,quotaWindowSpecs:options.specs||null,localScope:LOCAL_SCOPE,staging,now,timeZone:this.timeZone,source:this.source},{isCurrent}),this.sweepStaleSummaryTemps(sweepDirs)]).then(([raw])=>{
       if(!raw||isCurrent()!==true)return;this.diskSummaryError=false;
       const {quotaWindowCounts,...value}=raw;
       if(quotaWindowCounts)Object.defineProperty(value,'_quotaWindowCounts',{value:quotaWindowCounts,enumerable:false,configurable:true});

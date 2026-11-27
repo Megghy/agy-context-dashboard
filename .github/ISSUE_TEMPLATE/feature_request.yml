@@ -1,0 +1,30 @@
+name: Feature Request / 功能建议
+description: 提出新功能、交互改进或指标需求 / Suggest an enhancement or new feature
+title: "[Feat]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你的想法！清晰的场景描述能帮助我们更快评估与实现。
+        Thanks for sharing your idea! Clear use cases help us evaluate and ship faster.
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景与痛点 / Problem or Use Case
+      placeholder: 在什么场景下需要这个能力？目前遇到了什么限制？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案 / Proposed Solution
+      placeholder: 描述你期望的界面、交互、CLI 或配置方式
+    validations:
+      required: true
+  - type: checkboxes
+    id: pr-willing
+    attributes:
+      label: 贡献意愿 / Contribution
+      options:
+        - label: 如果方案确认，我愿意尝试提交 PR 到 `dev` 分支 / I would like to open a PR targeting `dev`

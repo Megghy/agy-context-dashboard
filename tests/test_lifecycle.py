@@ -50,10 +50,12 @@ class LifecycleTests(unittest.TestCase):
         locks=importlib.util.module_from_spec(lock_spec);lock_spec.loader.exec_module(locks)
         with locks.lifecycle_lock(self.plugin):
             with self.assertRaises(FileExistsError):manager.install(panel_only=True)
+            self.assertFalse((self.plugin / 'sidecars' / 'panel' / 'main.mjs').exists())
             with self.assertRaises(FileExistsError):manager.uninstall()
         journal=self.plugin.parent/'.antigravity-pulse-update-transaction/journal.json'
         journal.parent.mkdir();journal.write_text('{}')
         with self.assertRaisesRegex(RuntimeError,'recovery'):manager.install(panel_only=True)
+        self.assertFalse((self.plugin / 'sidecars' / 'panel' / 'main.mjs').exists())
         with self.assertRaisesRegex(RuntimeError,'recovery'):manager.uninstall()
 
     def test_other_plugin_is_not_overwritten_or_removed(self):
@@ -187,5 +189,23 @@ class LifecycleTests(unittest.TestCase):
         parsed_ready = json.loads(out_ready.getvalue())
         self.assertTrue(parsed_ready['debugPortAvailable'])
         self.assertNotIn('debugPortHint', parsed_ready)
+
+    def test_install_restarts_verified_active_sidecar_from_sidecar_data(self):
+        manager.atomic_json(self.config, {'plugins': {}})
+        marker = self.home / '.gemini' / 'antigravity' / 'sidecar_data' / 'antigravity-pulse' / 'panel' / 'data' / 'active-sidecar.json'
+        manager.atomic_json(marker, {'pid': 424242, 'startedAt': 1, 'token': 'tok'})
+        out = io.StringIO()
+        with patch.object(manager, '_is_sidecar_process', return_value=True), \
+             patch.object(manager.os, 'kill') as kill_mock, \
+             patch('sys.stdout', out):
+            manager.install(panel_only=True)
+        kill_mock.assert_called_once_with(424242, manager.signal.SIGTERM)
+        self.assertIn('Restarted active plugin sidecar', out.getvalue())
+
+        with patch.object(manager, '_is_sidecar_process', return_value=False), \
+             patch.object(manager.os, 'kill') as kill_mock, \
+             patch('sys.stdout', io.StringIO()):
+            manager.install(panel_only=True)
+        kill_mock.assert_not_called()
 
 if __name__ == '__main__': unittest.main()

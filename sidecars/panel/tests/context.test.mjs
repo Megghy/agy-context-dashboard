@@ -9,9 +9,9 @@ import { SessionHistory, safeMetrics } from '../history.mjs';
 import { MetricsStore } from '../store.mjs';
 
 const id='11111111-1111-1111-1111-111111111111',scope='a'.repeat(64);
-const raw=(used,max=256000,n=1)=>({trajectory:{cascadeId:id,generatorMetadata:Array.from({length:n},(_,i)=>({chatModel:{modelDisplayName:'Model A',usage:{messageId:String(i),inputTokens:'100',responseOutputTokens:'100',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},streamingDuration:'2s',chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:used,maxContextTokens:max,tokenBreakdown:{prompt:'DO NOT SAVE'}}}}}))}});
+const raw=(used,max=256000,n=1)=>({trajectory:{cascadeId:id,generatorMetadata:Array.from({length:n},(_,i)=>({chatModel:{modelDisplayName:'Model A',usage:{messageId:String(i),inputTokens:String(used),responseOutputTokens:'100',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},streamingDuration:'2s',chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:used,maxContextTokens:max,tokenBreakdown:{prompt:'DO NOT SAVE'}}}}}))}});
 
-test('context is latest request estimate, never accumulated tokens; 0 and over-capacity remain honest',()=>{
+test('context is latest settled usage, never accumulated tokens; 0 and over-capacity remain honest',()=>{
   const result=trajectoryMetrics(raw(112000,256000,3));
   assert.equal(result.context.usedTokens,112000);assert.equal(result.context.usedFraction,.4375);
   assert.equal(result.context.remainingTokens,144000);
@@ -236,4 +236,142 @@ test('2.34.0 Spec A catalog, Orchestrator Hydrogen 1M ref, Neon/Trial/2.5, and q
  }
  assert.equal(modelContextReference('MODEL_PLACEHOLDER_M405')?.label,'1M');
  assert.equal(quotaPoolForModel('MODEL_PLACEHOLDER_M999','API_PROVIDER_ANTHROPIC_VERTEX'),'3p');
+});
+
+test('settled usage calibrates Gemini overestimate and Claude underestimate; aborted tail carries forward safely',async t=>{
+ // 1. Gemini pre-request overestimate (568,304 vs actual 511,991 on 512K window)
+ const geminiOver=trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[{chatModel:{
+  modelDisplayName:'Gemini 4 Hydrogen (High)',streamingDuration:'2s',
+  chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:568304,maxContextTokens:512000}},
+  usage:{messageId:'g1',inputTokens:'2289',cacheReadTokens:'509282',outputTokens:'420',responseOutputTokens:'120',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},
+ }}]}});
+ assert.equal(geminiOver.context.usedTokens,511991);
+ assert.ok(geminiOver.context.usedFraction<1);
+ assert.equal(geminiOver.context.estimated,false);
+
+ // 2. Claude pre-request underestimate (430,591 vs actual 631,610 on 840K window)
+ const claudeUnder=trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[{chatModel:{
+  modelDisplayName:'Claude Sonnet 5.5 (Medium)',streamingDuration:'2s',
+  chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:430591,maxContextTokens:840000}},
+  usage:{messageId:'c1',inputTokens:'5859',cacheReadTokens:'624586',outputTokens:'1165',responseOutputTokens:'400',apiProvider:'API_PROVIDER_ANTHROPIC_VERTEX'},
+ }}]}});
+ assert.equal(claudeUnder.context.usedTokens,631610);
+ assert.equal(claudeUnder.context.estimated,false);
+
+ // 3. Trailing aborted/empty-usage turn carries forward settled baseline + positive estimate delta
+ const abortedTail=trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[
+  {chatModel:{modelDisplayName:'Claude Sonnet 5.5 (Medium)',streamingDuration:'2s',
+   chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:430591,maxContextTokens:840000}},
+   usage:{messageId:'c1',inputTokens:'5859',cacheReadTokens:'624586',outputTokens:'1165',responseOutputTokens:'400',apiProvider:'API_PROVIDER_ANTHROPIC_VERTEX'}}},
+  {chatModel:{modelDisplayName:'Claude Sonnet 5.5 (Medium)',
+   chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:435224,maxContextTokens:840000}},
+   usage:{}}},
+ ]}});
+ assert.equal(abortedTail.context.usedTokens,636243);
+ assert.equal(abortedTail.context.estimated,true);
+
+ // 4. Post-compaction empty-usage turn falls back to new estimate instead of carrying pre-compaction baseline
+ const postCompaction=trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[
+  {chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',streamingDuration:'2s',
+   chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:500000,maxContextTokens:512000}},
+   usage:{messageId:'g1',inputTokens:'490000',outputTokens:'100',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}}},
+  {chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',
+   chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:48000,maxContextTokens:512000}},
+   usage:{}}},
+ ]}});
+ assert.equal(postCompaction.context.usedTokens,48000);
+ assert.equal(postCompaction.context.estimated,true);
+
+ // 5. First in-flight turn without usage falls back to estimatedTokensUsed
+ const firstInFlight=trajectoryMetrics({trajectory:{cascadeId:id,generatorMetadata:[
+  {chatModel:{modelDisplayName:'Gemini 4 Neon (High)',
+   chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:12345,maxContextTokens:512000}}}},
+ ]}});
+ assert.equal(firstInFlight.context.usedTokens,12345);
+ assert.equal(firstInFlight.context.estimated,true);
+
+ // 6. StreamAgentStateUpdates zero payload never overwrites valid context
+ const dir=await mkdtemp(join(tmpdir(),'ag-zero-stream-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const store=new MetricsStore({
+  discover:async()=>({pid:1}),
+  call:async m=>m==='GetUserStatus'?{userStatus:{email:'a@b.test'}}:m==='RetrieveUserQuotaSummary'?{}:{customizationTokenBase:{totalTokens:5000,groups:[]}},
+  trajectory:async()=>({trajectory:{cascadeId:id,steps:[{type:'CORTEX_STEP_TYPE_USER_INPUT'}],generatorMetadata:[{stepIndices:[0],chatModel:{modelDisplayName:'Claude Sonnet 5.5 (Medium)',usage:{messageId:'m1',inputTokens:'100000',outputTokens:'500',apiProvider:'API_PROVIDER_ANTHROPIC_VERTEX'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:80000,maxContextTokens:840000}}}}]}}),
+  streamContextWindowUsage:async()=>({contextWindowUsage:{estimatedTokensUsed:0,maxContextTokens:840000,tokenGroups:[]}}),
+ },{history:new SessionHistory(dir),transcripts:null,background:null});
+ t.after(()=>store.dispose());
+ const snap=await store.snapshot({conversationId:id,contextDetail:true});
+ assert.equal(snap.speed.context.usedTokens,100500);
+
+ // 7. Stale hostContextCache does not revert speed.context after hostMark changes (e.g., compaction)
+ const dir2=await mkdtemp(join(tmpdir(),'ag-stale-stream-'));t.after(()=>rm(dir2,{recursive:true,force:true}));
+ let phase=1;
+ const store2=new MetricsStore({
+  discover:async()=>({pid:1}),
+  call:async m=>m==='GetUserStatus'?{userStatus:{email:'a@b.test'}}:m==='RetrieveUserQuotaSummary'?{}:{customizationTokenBase:{totalTokens:5000,groups:[]}},
+  trajectory:async()=>phase===1
+   ?{trajectory:{cascadeId:id,steps:[{type:'CORTEX_STEP_TYPE_USER_INPUT'}],generatorMetadata:[{stepIndices:[0],chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',usage:{messageId:'m1',inputTokens:'490000',outputTokens:'500',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:515000,maxContextTokens:512000}}}}]}}
+   :{trajectory:{cascadeId:id,steps:[{type:'CORTEX_STEP_TYPE_USER_INPUT'},{type:'CORTEX_STEP_TYPE_COMPACTION'}],generatorMetadata:[
+    {stepIndices:[0],chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',usage:{messageId:'m1',inputTokens:'490000',outputTokens:'500',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:515000,maxContextTokens:512000}}}},
+    {stepIndices:[1],chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',usage:{messageId:'m2',inputTokens:'40000',outputTokens:'200',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:45000,maxContextTokens:512000}}}},
+   ]}},
+  streamContextWindowUsage:async()=>({contextWindowUsage:{estimatedTokensUsed:495000,maxContextTokens:512000,tokenGroups:[{name:'Chat Messages',type:'TOKEN_TYPE_CHAT_MESSAGES',numTokens:495000}]}}),
+ },{history:new SessionHistory(dir2),transcripts:null,background:null});
+ t.after(()=>store2.dispose());
+ const s1=await store2.snapshot({conversationId:id,contextDetail:true});
+ assert.equal(s1.speed.context.usedTokens,495000);
+ phase=2;
+ const s2=await store2.snapshot({conversationId:id,force:true,contextDetail:false});
+ assert.equal(s2.speed.context.usedTokens,40200);
+});
+
+test('compactionState tracks in-flight /compact and refreshes host context immediately upon compaction',async t=>{
+ const id='33333333-3333-4333-8333-333333333333';
+ const inFlight=trajectoryMetrics({
+  status:'CASCADE_RUN_STATUS_RUNNING',
+  trajectory:{
+   cascadeId:id,
+   steps:[
+    {type:'CORTEX_STEP_TYPE_USER_INPUT',userInput:{userResponse:'hello'}},
+    {type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE'},
+    {type:'CORTEX_STEP_TYPE_USER_INPUT',userInput:{userResponse:'/compact'}},
+   ],
+   generatorMetadata:[
+    {stepIndices:[1],chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',usage:{messageId:'m1',inputTokens:'480000',outputTokens:'500',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:485000,maxContextTokens:512000}}}},
+   ],
+  },
+ });
+ assert.equal(inFlight.compactionState,'compacting');
+
+ const dir=await mkdtemp(join(tmpdir(),'ag-compact-sync-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ let stage='compacting';
+ const store=new MetricsStore({
+  discover:async()=>({pid:1}),
+  call:async m=>m==='GetUserStatus'?{userStatus:{email:'a@b.test'}}:m==='RetrieveUserQuotaSummary'?{}:{customizationTokenBase:{totalTokens:5000,groups:[]}},
+  trajectory:async()=>stage==='compacting'
+   ?{status:'CASCADE_RUN_STATUS_RUNNING',trajectory:{cascadeId:id,steps:[
+     {type:'CORTEX_STEP_TYPE_USER_INPUT',userInput:{userResponse:'hello'}},
+     {type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE'},
+     {type:'CORTEX_STEP_TYPE_COMPACTION',status:'CORTEX_STEP_STATUS_RUNNING'},
+    ],generatorMetadata:[
+     {stepIndices:[1],chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',usage:{messageId:'m1',inputTokens:'480000',outputTokens:'500',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:485000,maxContextTokens:512000}}}},
+    ]}}
+   :{status:'CASCADE_RUN_STATUS_IDLE',trajectory:{cascadeId:id,steps:[
+     {type:'CORTEX_STEP_TYPE_USER_INPUT',userInput:{userResponse:'hello'}},
+     {type:'CORTEX_STEP_TYPE_PLANNER_RESPONSE'},
+     {type:'CORTEX_STEP_TYPE_COMPACTION',status:'CORTEX_STEP_STATUS_DONE'},
+    ],generatorMetadata:[
+     {stepIndices:[1],chatModel:{modelDisplayName:'Gemini 4 Hydrogen (High)',usage:{messageId:'m1',inputTokens:'480000',outputTokens:'500',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:485000,maxContextTokens:512000}}}},
+    ]}},
+  streamContextWindowUsage:async()=>({contextWindowUsage:{estimatedTokensUsed:32000,maxContextTokens:512000,tokenGroups:[{name:'Chat Messages',type:'TOKEN_TYPE_CHAT_MESSAGES',numTokens:32000}]}}),
+ },{history:new SessionHistory(dir),transcripts:null,background:null});
+ t.after(()=>store.dispose());
+
+ const snap1=await store.snapshot({conversationId:id,contextDetail:false});
+ assert.equal(snap1.speed.compactionState,'compacting');
+ assert.equal(snap1.speed.context.usedTokens,480500);
+
+ stage='compacted';
+ const snap2=await store.snapshot({conversationId:id,force:true,contextDetail:false});
+ assert.equal(snap2.speed.compactionState,'compacted');
+ assert.equal(snap2.speed.context.usedTokens,32000,'host stream updates context immediately after compaction without waiting for contextDetail or next turn');
 });

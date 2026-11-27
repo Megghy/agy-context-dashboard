@@ -147,7 +147,12 @@ def update_proxies():
     when the environment contains only NO_PROXY. Empty env settings still
     explicitly disable their scheme; lowercase wins as it does in urllib.
     """
-    proxies = dict(urllib.request.getproxies_registry()) if os.name == 'nt' else {}
+    if os.name == 'nt':
+        proxies = dict(urllib.request.getproxies_registry())
+    elif sys.platform == 'darwin' and hasattr(urllib.request, 'getproxies_macosx_sysconf'):
+        proxies = dict(urllib.request.getproxies_macosx_sysconf())
+    else:
+        proxies = {}
     environment = urllib.request.getproxies_environment()
     declared = {name[:-6].lower() for name in os.environ if name.lower().endswith('_proxy')}
     if 'REQUEST_METHOD' in os.environ and not any(name == 'http_proxy' for name in os.environ):

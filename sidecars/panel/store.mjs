@@ -13,14 +13,15 @@ import {DelegatedUsage} from './delegated-usage.mjs';
 import {safeTaskUsage} from './task-usage.mjs';
 import {delegatedIds} from './delegation.mjs';
 import {classifyAgentRole} from './swarm.mjs';
+import {contextMetrics} from './context.mjs';
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOCAL_SCOPE = createHash('sha256').update('ag-pulse:local-unauthenticated').digest('hex');
 const BACKGROUND_RECHECK_MS=5*60*1000, BACKGROUND_MANUAL_COOLDOWN_MS=10*1000;
 const settledStatus=s=>/IDLE|DONE|COMPLETED|CANCELLED|CANCELED|STOPPED|FAILED|ERROR/.test(String(s||''));
 export class MetricsStore {
-  constructor(client = new AntigravityClient(), { history = new SessionHistory(), onTrajectory = null, onBackgroundResult = null, background = undefined, transcripts = new TranscriptReader(), owns=()=>true } = {}) {
-    this.client = client; this.history = history; this.onTrajectory=onTrajectory; this.onBackgroundResult=onBackgroundResult; this.transcripts=transcripts; this.owns=owns;
+  constructor(client = new AntigravityClient(), { history = new SessionHistory(), onTrajectory = null, onBackgroundResult = null, background = undefined, transcripts = new TranscriptReader(), owns=()=>true, orchestratorSettings = null } = {}) {
+    this.client = client; this.history = history; this.onTrajectory=onTrajectory; this.onBackgroundResult=onBackgroundResult; this.transcripts=transcripts; this.owns=owns; this.orchestratorSettings=orchestratorSettings;
     this.background=background===undefined?(typeof client.streamTrajectoryPage==='function'&&history.directory?new BackgroundStatistics({directory:join(dirname(history.directory),'collection-jobs'),owns:()=>this.owned(),onComplete:(...args)=>this.acceptBackground(...args)}):null):background;
     if(this.background&&client.reader)client.reader.isBackgroundManaged=id=>this.sessions.get(id)?.backgroundOnly===true;
     this.delegated=new DelegatedUsage(client,{owns,brainRoot:transcripts?.root??null,
@@ -232,14 +233,16 @@ export class MetricsStore {
     if(started){entry.backgroundOnly=true;entry.backgroundReady=false;}
     return started;
   }
-  async session(id, force = false) {
+  async session(id, force = false, { orchestratorSettings = this.orchestratorSettings } = {}) {
     if (!GUID.test(id)) throw new Error('会话标识无效');
     if (!this.owned()) throw new Error('后台已重新连接，请等待刷新');
     id=id.toLowerCase();
     const identity = this.identity, scope = this.storageScope(identity), epoch = this.epoch;
+    const orchKey = orchestratorSettings ? `${orchestratorSettings.orchestratorModel || ''}\0${orchestratorSettings.orchestratorExecutorModel || ''}` : '';
     let entry = this.sessions.get(id);
     if (entry?.pending) return entry.pending;
-    if (!force && entry?.data && Date.now() - entry.updatedAt < 1800) return entry.data;
+    const ttlMs = entry?.data?.compactionState === 'compacting' ? 400 : 1800;
+    if (!force && entry?.data && Date.now() - entry.updatedAt < ttlMs && (entry.orchKey || '') === orchKey) return entry.data;
     entry ||= {};
     this.sessions.set(id, entry);
     const current = () => this.owned() && identity === this.identity && epoch === this.epoch && this.sessions.get(id) === entry;
@@ -271,7 +274,7 @@ export class MetricsStore {
       if(this.onTrajectory){try{const result=await this.onTrajectory(scope,id,raw,{isCurrent:current,guardKey:entry});if(current()&&result?.deferred!==true)this.setUsagePersistenceError('foreground:'+id,false);}catch{if(current())this.setUsagePersistenceError('foreground:'+id,true);}}
       if (!current()) throw new Error('后台已重新连接，请等待刷新');
       entry.collection=null;entry.lastSuccessAt=new Date().toISOString();
-      const fresh = trajectoryMetrics(raw);
+      const fresh = trajectoryMetrics(raw, null, { orchestratorSettings });
       const summaryMeta = this.client.reader?.summaries?.[id]?.trajectoryMetadata
         || Object.entries(this.client.reader?.summaries || {}).find(([k]) => k.toLowerCase() === id)?.[1]?.trajectoryMetadata || null;
       const isSubagent = Boolean(summaryMeta?.parentConversationId || summaryMeta?.subagentSpec || (Number(summaryMeta?.nestingDepth) > 0));
@@ -288,7 +291,7 @@ export class MetricsStore {
       // Composition is pure arithmetic over already-collected statistics; the
       // exact customization figure is attached lazily in snapshot().
       fresh.contextComposition=compositionMetrics({context:fresh.context,steps:raw.trajectory?.steps,generators:raw.trajectory?.generatorMetadata,transcript:fresh.transcriptStats});
-      entry.data = {...reconcileMetrics(entry.data,fresh,entry.savedAt || null),conversationId:id}; entry.updatedAt = Date.now();
+      entry.data = {...reconcileMetrics(entry.data,fresh,entry.savedAt || null),conversationId:id}; entry.updatedAt = Date.now(); entry.orchKey = orchKey;
       try { const saved = await this.history.save(scope,id,entry.data,{isCurrent:current}); if (saved&&current()) entry.savedAt = saved.savedAt; if (current()) this.persistenceError = null; }
       catch { if(current())this.persistenceError = '统计暂时无法保存到本地'; }
       if (!current()) throw new Error('后台已重新连接，请等待刷新');
@@ -344,12 +347,13 @@ export class MetricsStore {
     };
   }
 
-  async archivedSession(id, { force = false } = {}) {
+  async archivedSession(id, { force = false, orchestratorSettings = this.orchestratorSettings } = {}) {
     if (!this.owned() || !GUID.test(id || '')) return null;
     const lower = id.toLowerCase();
+    const orchKey = orchestratorSettings ? `${orchestratorSettings.orchestratorModel || ''}\0${orchestratorSettings.orchestratorExecutorModel || ''}` : '';
     if (!force) {
       const cached = this.archivedCache.get(lower);
-      if (cached) return cached;
+      if (cached && cached.orchKey === orchKey) return cached.value;
     }
     if (this.archivedPending.has(lower)) return this.archivedPending.get(lower);
     const epoch = this.epoch;
@@ -359,7 +363,7 @@ export class MetricsStore {
         const budget = this.client?.reader?.budgetBytes || 8 * 1024 * 1024;
         const raw = await this.fetchDirectTrajectory(lower, budget);
         if (raw && this.owned() && epoch === this.epoch) {
-          const fresh = trajectoryMetrics(raw);
+          const fresh = trajectoryMetrics(raw, null, { orchestratorSettings });
           try { if (this.transcripts) fresh.transcriptStats = this.transcripts.request(this.storageScope(), lower, raw); } catch {}
           fresh.contextComposition = compositionMetrics({
             context: fresh.context,
@@ -375,7 +379,7 @@ export class MetricsStore {
         result = await summarizeTranscriptArchive(root, lower, { modelAliases: this.client?.modelAliases || null }).catch(() => null);
       }
       if (result && this.owned() && epoch === this.epoch) {
-        this.archivedCache.set(lower, result);
+        this.archivedCache.set(lower, { value: result, orchKey });
       }
       return result;
     })().finally(() => {
@@ -385,7 +389,8 @@ export class MetricsStore {
     return run;
   }
 
-  async snapshot({ conversationId, force = false, quotaRefresh = false, selectLatest = true, contextDetail = false } = {}) {
+  async snapshot({ conversationId, force = false, quotaRefresh = false, selectLatest = true, contextDetail = false, orchestratorSettings = undefined } = {}) {
+    const effectiveOrch = orchestratorSettings !== undefined ? orchestratorSettings : this.orchestratorSettings;
     let connection = 'live', error = null, speed = null, sessionError = null, collection = null;
     try {
       if (!this.owned()) throw new Error('后台已重新连接，请等待刷新');
@@ -407,10 +412,10 @@ export class MetricsStore {
       }
       const selected = conversationId || (selectLatest !== false ? summaries[0]?.id : null);
       if (selected) {
-        try { speed = await this.session(selected, force); }
+        try { speed = await this.session(selected, force, { orchestratorSettings: effectiveOrch }); }
         catch (e) {
           if (conversationId && GUID.test(conversationId) && !collectionFailure(e)) {
-            try { speed = await this.archivedSession(selected, { force }); } catch {}
+            try { speed = await this.archivedSession(selected, { force, orchestratorSettings: effectiveOrch }); } catch {}
           }
           if (!speed) sessionError = e.message;
         }
@@ -422,7 +427,7 @@ export class MetricsStore {
       if (conversationId) {
         speed = await this.cachedSession(conversationId);
         if (!speed && GUID.test(conversationId)) {
-          try { speed = await this.archivedSession(conversationId, { force }); } catch {}
+          try { speed = await this.archivedSession(conversationId, { force, orchestratorSettings: effectiveOrch }); } catch {}
         }
       }
     }
@@ -435,21 +440,32 @@ export class MetricsStore {
     if (speed?.contextComposition) {
       const targetId = speed.conversationId || conversationId || null;
       const hostMark = `${speed.steps ?? ''}:${speed.requests ?? ''}:${speed.lastActiveAt ?? ''}`;
-      if (contextDetail) {
+      if (contextDetail || speed?.compactionState === 'compacted') {
         await Promise.allSettled([
-          this.refreshTokenBase(),
+          contextDetail ? this.refreshTokenBase() : Promise.resolve(null),
           targetId ? this.refreshHostContext(targetId, hostMark) : Promise.resolve(null),
         ]);
       }
       let nextComposition = speed.contextComposition;
+      let nextContext = speed.context;
       if (this.tokenBase) nextComposition = attachTokenBase(nextComposition, this.tokenBase);
       if (targetId) {
-        const cachedHost = this.hostContextCache.get(targetId.toLowerCase())?.value;
+        const cachedEntry = this.hostContextCache.get(targetId.toLowerCase());
+        const cachedHost = cachedEntry?.value;
         if (cachedHost?.hostUsage) {
           nextComposition = attachHostContextUsage(nextComposition, cachedHost.hostUsage, cachedHost.creditUsage);
+          if (cachedEntry.mark === hostMark && cachedHost.hostUsage.usedTokens > 0 && cachedHost.hostUsage.maxTokens > 0) {
+            const synced = contextMetrics(
+              { estimatedTokensUsed: cachedHost.hostUsage.usedTokens, maxContextTokens: cachedHost.hostUsage.maxTokens },
+              { model: speed.context?.model || speed.model, sampledAt: speed.context?.sampledAt || speed.lastActiveAt, estimated: false },
+            );
+            if (synced) nextContext = synced;
+          }
         }
       }
-      if (nextComposition !== speed.contextComposition) speed = { ...speed, contextComposition: nextComposition };
+      if (nextComposition !== speed.contextComposition || nextContext !== speed.context) {
+        speed = { ...speed, context: nextContext, contextComposition: nextComposition };
+      }
     }
     if (speed?.model && speed?.tokens && !speed.estimatedCost) {
       const est = estimateModelsCost({
@@ -461,6 +477,13 @@ export class MetricsStore {
         },
       });
       if (est.hasPriced) speed = { ...speed, estimatedCost: est };
+    }
+    if (speed?.taskUsage) {
+      const targetId = (speed.conversationId || conversationId || '').toLowerCase();
+      const swarmTitle = targetId ? this.delegated.tasks.get(targetId)?.swarmMembers?.title || null : null;
+      if (swarmTitle && !speed.taskUsage.swarmTitle) {
+        speed = { ...speed, taskUsage: { ...speed.taskUsage, swarmTitle } };
+      }
     }
     return {
       connection, error, sessionError, collection, serverTime: new Date().toISOString(),

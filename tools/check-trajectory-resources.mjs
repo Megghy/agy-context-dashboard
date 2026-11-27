@@ -10,7 +10,7 @@ assert.ok(process.argv.length<=5&&(!process.argv[4]||expectBudgetRejection),'Unk
 assert.ok(Number.isInteger(corpusMiB)&&corpusMiB>=0&&corpusMiB<=2048&&Number.isInteger(n)&&n>0&&n<=65536,'Usage: node --expose-gc tools/check-trajectory-resources.mjs <corpus MiB 0..2048> <requests 1..65536>');
 const summary={stepCount:n+1,lastModifiedTime:'2026-10-13T01:00:00Z',status:'CASCADE_RUN_STATUS_IDLE'},calls=[],telemetry=[];
 const step=i=>i===0?{type:'USER_INPUT'}:{type:'PLANNER_RESPONSE',plannerResponse:{response:'Fixture answer'}};
-const gen=i=>({stepIndices:[i+1],chatModel:{modelDisplayName:'Fixture model',streamingDuration:'2s',timeToFirstToken:'1s',usage:{responseId:'fixture-'+i,inputTokens:100,cacheReadTokens:300,cacheWriteTokens:0,outputTokens:200,responseOutputTokens:200,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{createdAt:'2026-10-13T01:00:00Z',contextWindowMetadata:{estimatedTokensUsed:400,maxContextTokens:10000}}}});
+const gen=i=>({stepIndices:[i+1],chatModel:{modelDisplayName:'Fixture model',streamingDuration:'2s',timeToFirstToken:'1s',usage:{responseId:'fixture-'+i,inputTokens:100,cacheReadTokens:300,cacheWriteTokens:0,outputTokens:200,responseOutputTokens:200,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'},chatStartMetadata:{createdAt:'2026-10-13T01:00:00Z',contextWindowMetadata:{estimatedTokensUsed:600,maxContextTokens:10000}}}});
 const chunk='x'.repeat(64*1024),pageSize=256;
 const server=createServer(async(req,res)=>{
  let body='';for await(const c of req)body+=c;const input=JSON.parse(body);const method=req.url.split('/').at(-1);calls.push({method,offset:input.stepOffset??input.generatorMetadataOffset??null});
@@ -37,7 +37,7 @@ try{
  const started=performance.now(),r=await client.trajectory(id),ms=performance.now()-started,m=trajectoryMetrics(r);
  assert.ok(!expectBudgetRejection,'Expected memory-budget rejection, but the workload succeeded');
  const lastMemory=process.memoryUsage();peakHeap=Math.max(peakHeap,lastMemory.heapUsed);peakRss=Math.max(peakRss,lastMemory.rss);
- assert.equal(m.requests,n);assert.equal(m.tps,100);assert.equal(m.cache.hitRate,.75);assert.equal(m.context.usedFraction,.04);assert.equal(m.counts.input,n*100);assert.equal(m.counts.output,n*200);
+ assert.equal(m.requests,n);assert.equal(m.tps,100);assert.equal(m.cache.hitRate,.75);assert.equal(m.context.usedFraction,.06);assert.equal(m.counts.input,n*100);assert.equal(m.counts.output,n*200);
  assert.ok(!calls.some(c=>c.method==='GetCascadeTrajectory'));
  const bytes=telemetry.reduce((a,b)=>a+b.bytes,0),coldCalls=calls.length;telemetry.length=0;calls.length=0;await client.trajectory(id);assert.ok(calls.every(c=>c.method==='GetAllCascadeTrajectories'));
  const heapIncrease=peakHeap-before.heapUsed;assert.ok(heapIncrease<client.reader.budgetBytes*4+16*1024*1024,'Retained memory must remain within the declared engineering budget margin');

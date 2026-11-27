@@ -210,7 +210,7 @@ function compositionSegments(usedTokens, maxTokens, dynamic, tokenBase = null) {
 // cache write), matching the requestCacheMetrics interface in metrics.mjs.
 // Markers are COMPACTION/CONTEXT_COMPACTION/CHECKPOINT steps anchored to the
 // first request whose earliest step index follows the marker.
-function trendMetrics(steps = [], generators = [], maxPoints = 96) {
+function trendMetrics(steps = [], generators = [], maxPoints = 96, maxTokens = null) {
   const points = [], seen = new Set();
   if (Array.isArray(generators)) generators.forEach((generator, index) => {
     const usage = generator?.chatModel?.usage;
@@ -239,12 +239,29 @@ function trendMetrics(steps = [], generators = [], maxPoints = 96) {
     markers.push({ pointIndex: at, kind, before: at > 0 ? points[at - 1].inputTokens : null, after: at < points.length ? points[at].inputTokens : null });
   });
   const offset = Math.max(0, points.length - maxPoints);
+  // Issue #80: annotate the trigger peak - the last request before the marker
+  // as a share of the model window. `peak` flags threshold-style triggers
+  // (>= COMPACTION_PEAK_FRACTION of window); a conservative default chosen
+  // because real-world triggers observed in issue #80 landed at 81.8%-94.8%.
+  const markerExtras = marker => {
+    const peakFraction = maxTokens && Number.isFinite(marker.before) ? marker.before / maxTokens : null;
+    return {
+      pointIndex: marker.pointIndex - offset, kind: marker.kind, before: marker.before, after: marker.after,
+      peakFraction: peakFraction !== null && Number.isFinite(peakFraction) ? peakFraction : null,
+      peak: peakFraction !== null && peakFraction >= COMPACTION_PEAK_FRACTION,
+    };
+  };
   return {
     points: points.slice(offset).map(point => ({ inputTokens: point.inputTokens })),
-    markers: markers.filter(marker => marker.pointIndex >= offset).map(marker => ({ pointIndex: marker.pointIndex - offset, kind: marker.kind, before: marker.before, after: marker.after })),
+    markers: markers.filter(marker => marker.pointIndex >= offset).map(markerExtras),
     totalRequests: points.length, totalMarkers: markers.length,
   };
 }
+
+// Share of the context window at or above which a compaction is annotated as a
+// threshold-triggered peak (issue #80). Conservative default; no official
+// threshold is exposed by the host.
+const COMPACTION_PEAK_FRACTION = 0.85;
 
 function hostSegments(usedTokens, maxTokens, hostUsage) {
   const segments = [];
@@ -295,7 +312,7 @@ export function compositionMetrics({ context = null, steps = [], generators = []
     version: 1, usedTokens, maxTokens, source: dynamic.source, dynamicSource: dynamic.source, complete: dynamic.complete, parts: dynamic.parts,
     customization: buildCustomizationPayload(tokenBase),
     segments: compositionSegments(usedTokens, maxTokens, dynamic, tokenBase),
-    trend: trendMetrics(steps, generators, maxTrendPoints),
+    trend: trendMetrics(steps, generators, maxTrendPoints, maxTokens),
   };
   return hostUsage ? attachHostContextUsage(base, hostUsage) : base;
 }

@@ -237,6 +237,23 @@ test('palette-only updates replace the installed theme controller without stacki
   assert.equal(window.mounted,2);assert.equal(window.disposed,1);assert.equal(window.theme,'new');
 });
 
+test('RuntimeUi hot-reinjects updated sourceForTarget into live connections without restart', async () => {
+  const { ui, connections } = fixture();
+  let current = 'widget-v1()';
+  ui.source = current;
+  ui.sourceForTarget = () => current;
+  await ui.tick();
+  const c = connections[0];
+  const initialPreloads = c.calls.filter(call => call.method === 'Page.addScriptToEvaluateOnNewDocument').length;
+  assert.equal(initialPreloads, 1);
+  current = 'widget-v2()';
+  await ui.tick();
+  assert.ok(c.calls.some(call => call.method === 'Page.removeScriptToEvaluateOnNewDocument'));
+  assert.equal(c.calls.filter(call => call.method === 'Page.addScriptToEvaluateOnNewDocument').length, 2);
+  assert.ok(c.calls.some(call => call.method === 'Runtime.evaluate' && call.params.expression?.includes('widget-v2()')));
+  await ui.stop();
+});
+
 test('old delayed injections and shutdown cannot replace or dispose a newer renderer',async()=>{
   const window={};window.top=window;window.mounted=0;window.disposed=0;
   const i18n='module.exports = function(){return {};};';

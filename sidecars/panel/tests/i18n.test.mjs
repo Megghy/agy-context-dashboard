@@ -68,7 +68,13 @@ test('Traditional Chinese (zh-TW) provides accurate localized terminology and to
   assert.equal(language.t('cacheRate'),'快取命中率');
   assert.equal(language.t('cacheMiss'),'未快取輸入');
   assert.equal(language.t('panelSpeed'),'速率');
-  assert.equal(language.t('panelCache'),'快取');
+  assert.equal(language.t('panelCache'),'Token · 快取');
+  assert.equal(language.t('panelQuota'),'配額');
+  assert.equal(language.t('tokenBaseDrilldown'),'規則與技能設定');
+  assert.equal(language.t('tokenBaseCustomBudget'),'設定總預算');
+  assert.equal(language.t('compositionRules'),'規則');
+  assert.equal(language.t('compositionSkills'),'技能');
+  assert.equal(language.t('drilldownShowMore',{n:53}),'展開其餘 53 項');
   assert.equal(language.t('panelSharedQuota'),'配額');
   assert.equal(language.t('argonWeek'),'Argon 每週配額');
   assert.equal(language.t('sample',{rounds:2,steps:6,requests:3}),'2 輪 6 步 · 3 次取樣');
@@ -84,5 +90,22 @@ test('Traditional Chinese (zh-TW) provides accurate localized terminology and to
   assert.equal(language.errorMessage('会话统计数据超过内存预算'),'對話統計資料超出記憶體預算');
   assert.equal(language.errorMessage('Antigravity 接口 GetUserStatus 返回 401'),'Antigravity API GetUserStatus 回傳 HTTP 401');
   const saved=language.toggle();assert.equal(saved,'en');
+  assert.equal(language.t('tokenBaseDrilldown'),'Rules & skills config');
+  assert.equal(language.t('tokenBaseCustomBudget'),'Total config budget');
   assert.equal(language.toggle(),'zh-TW');
+});
+
+test('compaction metric clarification and peak annotation keys exist in all locales (issue #80)',()=>{
+  const dictionaries=Function('return ('+create.toString().replace('let language=', 'return dictionary; let language=')+')')()();
+  for(const key of ['compactionMetricsBasis','trendPeakShare','trendPeakTrigger']){
+    for(const locale of ['en','zh-CN','zh-TW']){
+      assert.equal(typeof dictionaries[locale][key],'string',locale+':'+key);
+      assert.ok(dictionaries[locale][key].length>0);
+    }
+  }
+  const language=create('en');
+  assert.equal(language.t('trendPeakShare',{pct:95}),'▲ 95% of window');
+  assert.ok(language.t('compactionMetricsBasis').includes('cumulative'));
+  const zh=create('zh-CN');
+  assert.equal(zh.t('trendPeakTrigger'),'阈值触发峰值');
 });

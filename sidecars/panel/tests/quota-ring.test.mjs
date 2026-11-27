@@ -53,11 +53,17 @@ test('unknown balances stay unknown, never 0%',()=>{
 });
 
 test('weekly-only groups render the weekly window alone in every mode',()=>{
-  for(const mode of ['both','auto','compact']){
+  for(const mode of ['both','auto','compact','weekly']){
     const v=view(undefined,0.85,mode);
     assert.equal(v.five,null);
     assert.deepEqual(pick(v),{show:'weekly',arcValue:0.85,level:'ok',dot:null,min:0.85});
   }
+});
+
+test('weekly mode pins the weekly window even when 5h is tighter and falls back only when weekly is absent',()=>{
+  assert.deepEqual(pick(view(0.10,0.88,'weekly')),{show:'weekly',arcValue:0.88,level:'ok',dot:null,min:0.10});
+  assert.deepEqual(pick(view(0.90,0.20,'weekly')),{show:'weekly',arcValue:0.20,level:'warn',dot:null,min:0.20});
+  assert.deepEqual(pick(view(0.75,undefined,'weekly')),{show:'5h',arcValue:0.75,level:'ok',dot:null,min:0.75});
 });
 
 test('compact mode pins 5h and flags only the other window with a status dot',()=>{
@@ -76,15 +82,15 @@ test('the same group renders differently per quotaDisplay mode',()=>{
   assert.equal(view(0.6,0.2,'auto').show,'weekly');
   assert.equal(view(0.6,0.2,'compact').show,'5h');
   const language=create('en');
-  assert.equal(language.normalizeQuotaDisplay('both'),'both');assert.equal(language.normalizeQuotaDisplay('auto'),'auto');assert.equal(language.normalizeQuotaDisplay('compact'),'compact');
+  assert.equal(language.normalizeQuotaDisplay('both'),'both');assert.equal(language.normalizeQuotaDisplay('auto'),'auto');assert.equal(language.normalizeQuotaDisplay('compact'),'compact');assert.equal(language.normalizeQuotaDisplay('weekly'),'weekly');
   for(const invalid of [null,undefined,'dot','','BOTH'])assert.equal(language.normalizeQuotaDisplay(invalid),'both');
 });
 
 test('quota ring copy exists in all three locales with remaining semantics',()=>{
-  const expectations={'en':['Remaining quota','Balance unknown','Quota display','Two numbers','Auto','Dot'],'zh-CN':['剩余额度','余额未知','额度显示','双数字','自动','角标'],'zh-TW':['剩餘額度','餘額未知','額度顯示','雙數字','自動','角標']};
-  for(const [locale,[title,unknown,display,both,auto,compact]]of Object.entries(expectations)){
-    const language=create(locale),keys=['quotaRingTitle','quotaRingUnknown','quotaDisplay','quotaDisplayBoth','quotaDisplayAuto','quotaDisplayCompact'];
-    assert.deepEqual(keys.map(key=>language.t(key)),[title,unknown,display,both,auto,compact]);
+  const expectations={'en':['Remaining quota','Balance unknown','Quota display','Two numbers','Auto','Dot','Weekly'],'zh-CN':['剩余额度','余额未知','额度显示','双数字','自动','角标','仅周'],'zh-TW':['剩餘額度','餘額未知','額度顯示','雙數字','自動','角標','僅週']};
+  for(const [locale,[title,unknown,display,both,auto,compact,weekly]]of Object.entries(expectations)){
+    const language=create(locale),keys=['quotaRingTitle','quotaRingUnknown','quotaDisplay','quotaDisplayBoth','quotaDisplayAuto','quotaDisplayCompact','quotaDisplayWeekly'];
+    assert.deepEqual(keys.map(key=>language.t(key)),[title,unknown,display,both,auto,compact,weekly]);
     assert.equal(language.t('quotaDisplaySaveFailed').length>0,true);
     assert.notEqual(language.t('remaining'),language.t('quotaRingTitle'),'The ring labels remaining, the opposite of the context ring');
   }
@@ -98,6 +104,7 @@ test('quota display preference persists, rejects unknown values and migrates leg
   await store.set({quotaDisplay:'compact'});await store.set({language:'zh-CN'});
   let saved=await new PreferencesStore({file}).get();assert.equal(saved.quotaDisplay,'compact');assert.equal(saved.language,'zh-CN');
   await store.set({quotaDisplay:'auto'});saved=await store.get();assert.equal(saved.quotaDisplay,'auto');assert.equal(saved.language,'zh-CN');
+  await store.set({quotaDisplay:'weekly'});saved=await new PreferencesStore({file}).get();assert.equal(saved.quotaDisplay,'weekly');assert.equal(saved.language,'zh-CN');
   for(const input of [{quotaDisplay:'dot'},{quotaDisplay:null},{quotaDisplay:''},{quotaDisplay:'both',extra:'x'}])await assert.rejects(store.set(input));
   await writeFile(file,JSON.stringify({schema:1,language:'en',quotaDisplay:'<script>',revision:3}));
   assert.equal((await store.get()).quotaDisplay,null,'Unknown stored display values are ignored, not trusted');

@@ -1,66 +1,77 @@
 <div align="center">
 
-<img src="docs/assets/hero-zh.png?v=0.9.8" width="100%" alt="Antigrative Dashboard v0.9.8：生成速度、Token 缓存、剩余额度与上下文控件，就在输入框旁。">
+<img src="docs/assets/hero-zh.png?v=1.0.1" width="100%" alt="Antigravity Dashboard：生成速度、Token 缓存、剩余额度与上下文控件，就在输入框旁。">
 
-# AGY Context Dashboard (Antigrative Dashboard)
+# AGY Context Dashboard (Antigravity Dashboard)
 
 参考 DSH 设计的 Antigravity (`agy`) 上下文构成、Token 速率、缓存命中率、共享额度与全局洞察仪表盘；悬停胶囊展开精细统计，右侧边栏四视图一站式管理每日/每周活动、按模型用量、当前会话与全局洞察。<br>
 缩略信息常驻；鼠标悬停，才展开详细统计。
 
-[![Version 0.9.9](https://img.shields.io/badge/version-0.9.9-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
+[![Version 1.0.2](https://img.shields.io/badge/version-1.0.2-91adff?style=flat-square&labelColor=252936)](CHANGELOG.md)
 [![Platforms](https://img.shields.io/badge/host-Windows%20%7C%20Linux%20%7C%20macOS-83d8b9?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
 [![Antigravity 2.21.1 / 2.33.0+ / 2.34.0+](https://img.shields.io/badge/Antigravity-2.21.1%20%2F%202.33.0%2B%20%2F%202.34.0%2B-c5a0ff?style=flat-square&labelColor=252936)](COMPATIBILITY.md)
-[![Languages](https://img.shields.io/badge/languages-English%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-f2b880?style=flat-square&labelColor=252936)](#语言与缓存)
+[![Languages](https://img.shields.io/badge/languages-English%20%7C%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-f2b880?style=flat-square&labelColor=252936)](#统计口径与技术文档)
 [![MIT](https://img.shields.io/badge/license-MIT-d4d9e6?style=flat-square&labelColor=252936)](LICENSE)
 
-[看看效果](#看看效果) · [IDE](#antigravity-ide) · [CLI](#antigravity-cli-状态栏) · [开始安装](#安装) · [启用与停用](#可插拔) · [配套侧边栏](#配套侧边栏) · [宿主汉化与致谢](#宿主界面汉化与开源致谢) · [兼容性](#兼容性) · [常见问题](#常见问题) · [English](README.en.md)
+[看看效果](#看看效果) · [IDE](#antigravity-ide) · [CLI](#antigravity-cli-状态栏) · [开始安装](#安装) · [启用与停用](#可插拔) · [开源致谢](#宿主界面汉化与开源致谢) · [常见问题](#常见问题) · [English](README.en.md)
 
 </div>
 
 > [!TIP]
-> **已支持中文与一键宿主汉化（插件三语言 + Antigravity 宿主界面简体中文）**
->
-> - **支持宿主界面一键汉化（`汉` 按钮）**：在侧边栏顶部点击 `汉` 或在上下文详情底部开启「宿主界面汉化」，即可无侵入实时汉化 Antigravity 桌面端界面，无需修改 `app.asar` 或重启客户端，关闭开关即无损还原英文（[详细说明](#宿主界面汉化与开源致谢)）。
-> - **插件自身支持 `English / 简体中文 / 繁體中文`**：内嵌状态栏、悬浮卡、右侧边栏、用量窗口、CLI 状态栏与独立 IDE 均已适配，可在上下文详情或侧边栏菜单一键切换并跨重启保存。
+> - **三语言界面 + 一键宿主汉化**：插件支持 `English / 简体中文 / 繁體中文`；侧栏顶部 `汉` 按钮可无侵入实时汉化 Antigravity 桌面宿主，不改 `app.asar`，关闭即还原。
+> - **`2.33.0+` / `2.34.0+` 自动兼容**：自动适配 `2.34.0+` daemon 凭据与 Windows/Linux 快捷方式调试参数，默认开启 `autoRelaunchDebug`（启动前 `20s` 缺少调试端口时温和重拉恢复，可在侧栏关闭），不篡改应用包。
 
-> [!IMPORTANT]
-> **Antigravity Desktop `2.33.0+` / `2.34.0+` 兼容、启动与更新后自动注入说明（`v0.9.6`，[`#19`](https://github.com/wycocoyu/agy-context-dashboard/issues/19)、[`#17`](https://github.com/wycocoyu/agy-context-dashboard/issues/17)）**
->
-> - **`2.34.0+` 凭据机制变更与 `v0.9.6` 自动兼容**：Antigravity `2.34.0` 移除了 `language_server` 命令行参数上的 `--csrf_token`，改用环境变量传入并将 `{ pid, httpsPort, httpPort, lsVersion, csrfToken }` 写入 `~/.gemini/<appDataDir>/daemon/*.json`。**`v0.9.6`** 起已自动兼容该 daemon 凭据机制（按 PID 与实时监听端口双校验，同时兼容 `<= 2.33.x`）。若此前更新到 `2.34.0` 后出现「当前版本未提供可用的本地检测凭据」，升级到 `v0.9.6` 即可恢复。
-> - **为什么 `2.33.0+` 原版默认没有调试端口**：Antigravity `2.33.0+` 将 `--remote-debugging-port` 改为命令行显式开关，无参启动会主动删除 `<profile>/DevToolsActivePort`；应用内自动更新（`quitAndInstall()`）重启后同样会丢弃命令行参数；同时 `app.asar` 受 `ElectronAsarIntegrity` 与代码签名保护，本插件不篡改应用包。
-> - **Windows / Linux 快捷方式直启自愈**：执行 `manage.py install`（非 `--panel-only`）以及后台 Sidecar 运行时会自动为 Windows 用户 `.lnk` 快捷方式和 Linux `.desktop` 入口写入 `--remote-debugging-port=0 --remote-debugging-address=127.0.0.1`（并在卸载或 `--panel-only` 时干净撤回），日常点原图标即可一次直启、零重开注入。
-> - **`v0.9.5+` 默认开启启动期自动重拉恢复（涵盖 macOS 点原图标打开与三端更新重启后）**：内嵌模式下默认启用 `autoRelaunchDebug`。当插件在 Sidecar 启动后前 `20` 秒内检测到缺少调试端口（如 macOS 直接点原版图标，或三端应用内更新重启丢参后），会自动温和重拉一次带调试参数的宿主并恢复状态栏；同一组 PID 永不重复，不同 PID 在 `60` 秒滑窗内最多允许 `2` 次（间距 `>= 5` 秒，防循环熔断），超过启动 `20` 秒绝不在对话途中杀窗。
-> - **可选零二次重启直启与关闭开关**：macOS 日常使用通过 `python3 manage.py install --with-launcher` 生成的 `~/Applications/Antigravity (Debug).app`（或终端 `python3 manage.py launch`）打开即可零重开秒注入；如需关闭自动重拉，在官方侧边栏（**＋ → Extensions → Antigrative Dashboard**）取消勾选「缺少调试端口时自动重启恢复（如更新后）」即可。
-
-**v0.9.9：** 维护性修复版本（[`#46`](https://github.com/wycocoyu/agy-context-dashboard/issues/46)、[`#50`](https://github.com/wycocoyu/agy-context-dashboard/pull/50)、[`#52`](https://github.com/wycocoyu/agy-context-dashboard/issues/52)、[`#55`](https://github.com/wycocoyu/agy-context-dashboard/pull/55)）：新增 macOS 应用内「检查更新」自动回退探测 Homebrew（`python3` 及 `3.14`–`3.10`）与官方 Framework Python 3.10+，解决 GUI 启动默认 `PATH` 命中系统 3.9.6 报错问题；并支持 Windows 注册表/OneDrive 重定向桌面 `.lnk` 快捷方式发现及重拉失败 10 分钟退避保护。完整保留 `v0.9.8` 多维上下文与全局洞察工作台、`v0.9.7` 非侵入更新提醒、`v0.9.6` daemon 凭据兼容、`v0.9.5` 默认 `autoRelaunchDebug` 恢复、`v0.9.2` 调试启动器、`IDE 2.6.0`、`Gemini 4` / `GPT-6.1 Sol` / `Claude 4.5–5.5` 与 `agy 1.5.x` CLI 全部能力。[发布说明](https://github.com/wycocoyu/agy-context-dashboard/releases/tag/v0.9.9) · [变更记录](CHANGELOG.md)。
-
-**v0.9.8：** 上线**多维上下文与全局洞察工作台**（[`#16`](https://github.com/wycocoyu/agy-context-dashboard/issues/16)、[`#24`](https://github.com/wycocoyu/agy-context-dashboard/issues/24)、[`#29`](https://github.com/wycocoyu/agy-context-dashboard/issues/29)、[`#34`](https://github.com/wycocoyu/agy-context-dashboard/issues/34)、[`#43`](https://github.com/wycocoyu/agy-context-dashboard/issues/43)、[`#44`](https://github.com/wycocoyu/agy-context-dashboard/issues/44)）：将「每日/每周活动」「按模型用量」置顶，新增宿主上下文构成、压缩趋势图、会话审计、USD 参考费用与跨会话全局洞察，支持 `2.34.0` 多代理额度汇总与零缓存未命中计数（`cacheMissSurges`）、无侵入宿主界面中文切换、按模型缓存命中率列及显式「缓存命中率：」胶囊标识，并消除 WAL 重试与空元数据的局部统计误报、强化 192 MiB 内存防护。完整保留 `v0.9.7` 非侵入更新提醒、`v0.9.6` daemon 凭据兼容、`v0.9.5` 默认 `autoRelaunchDebug` 恢复、`v0.9.2` 调试启动器、`IDE 2.6.0`、`Gemini 4` / `GPT-6.1 Sol` / `Claude 4.5–5.5` 与 `agy 1.5.x` CLI 全部能力。[发布说明](https://github.com/wycocoyu/agy-context-dashboard/releases/tag/v0.9.8) · [变更记录](CHANGELOG.md)。
+**近期更新（[完整变更记录 →](CHANGELOG.md)）：**
+- **v1.0.2**：修复空对话加载配额后自动展开完整底栏，完善发版预检与社区贡献工作流。
+- **v1.0.1 / v1.0.0**：底栏自由换色与浅/深色非模态设置、模型选择器防截断与极简折叠、轮次/5 分类步数抽屉、Orchestrator/Swarm 拆分、Insights 正方形热力图与 Remote SSH 支持。
 
 ## 看看效果
 
-<img src="docs/assets/responsive-zh.png?v=0.9.8" width="100%" alt="v0.9.8 主对话窄窗口四图标布局，以及子代理输入框旁的独立统计。">
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark-zh.webp?v=1.0.3" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/hero-light-zh.webp?v=1.0.3" />
+  <img src="docs/assets/hero-light-zh.webp?v=1.0.3" width="100%" alt="Antigrative Dashboard 交互动效演示：悬停展开四类详情卡与侧栏标签切换。" />
+</picture>
+
+<sub>以上动效由离线渲染舞台直接运行本仓库前端源码逐帧录制，示例数据均为虚构。</sub>
+
+</div>
+
+<img src="docs/assets/responsive-zh.png?v=1.0.1" width="100%" alt="v1.0.1 主对话窄窗口四图标布局，以及子代理输入框旁的独立统计。">
 
 <table>
-<tr><th width="50%">生成速度与 Token 缓存（显式命中率标识）</th><th width="50%">独立额度预测与 8 分类上下文构成</th></tr>
+<tr><th width="50%">生成速度与 Token 缓存（显式命中率与就地开关）</th><th width="50%">独立额度预测与 8 分类上下文构成</th></tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/assets/speed-zh.png?v=0.9.8" width="100%" alt="生成速度详情卡：会话解码、端到端速率、TTFT 与解码峰值"><br><img src="docs/assets/widget-zh.png?v=0.9.8" width="100%" alt="Token 用量与缓存详情卡：带显式缓存命中率标识与读取/未缓存/输出明细"></td>
-<td width="50%" valign="top"><img src="docs/assets/quota-zh.png?v=0.9.8" width="100%" alt="独立剩余额度卡：Gemini、Claude、Argon 5h 与周额度倒计时及耗尽预测"><br><img src="docs/assets/context-zh.png?v=0.9.8" width="100%" alt="上下文窗口详情卡：宿主 8 分类构成、压缩次数、趋势折线与宿主界面汉化/语言切换开关"></td>
+<td width="50%" valign="top"><img src="docs/assets/speed-zh.png?v=1.0.1" width="100%" alt="生成速度详情卡：会话解码、端到端速率、TTFT 与解码峰值"><br><img src="docs/assets/widget-zh.png?v=1.0.1" width="100%" alt="Token 用量与缓存详情卡：带显式缓存命中率标识与状态栏命中率就地开关"></td>
+<td width="50%" valign="top"><img src="docs/assets/quota-zh.png?v=1.0.1" width="100%" alt="独立剩余额度卡：Gemini、Claude、Argon 5h 与周额度倒计时及耗尽预测"><br><img src="docs/assets/context-zh.png?v=1.0.1" width="100%" alt="上下文窗口详情卡：宿主 8 分类构成、压缩次数、趋势折线、布局切换与设置入口"></td>
 </tr>
 </table>
 
 <table>
-<tr><th width="50%">配套侧边栏 · 当前会话（四视图入口）</th><th width="50%">配套侧边栏 · 全局洞察（跨会话总览）</th></tr>
+<tr><th width="50%">v1.0.1 非模态设置面板与四项自由换色</th><th width="50%">浅 / 深色主题与自定义指标配色对照</th></tr>
 <tr>
-<td width="50%" valign="top"><img src="docs/assets/panel-session-zh.png?v=0.9.8" width="100%" alt="侧边栏四标签页与当前会话 Token 用量、预估费用及缓存命中率"></td>
-<td width="50%" valign="top"><img src="docs/assets/panel-insights-zh.png?v=0.9.8" width="100%" alt="全局洞察视图：Credits 额度、总消耗、预估费用、近 7 天柱状图与热力图"></td>
+<td width="50%" valign="top"><img src="docs/assets/settings-dialog-zh.png?v=1.0.1" width="100%" alt="非模态设置弹层：支持浅/深色切换、四项独立调色、排序与显隐控制"></td>
+<td width="50%" valign="top"><img src="docs/assets/theme-colors-zh.png?v=1.0.1" width="100%" alt="浅色默认蓝色基调、浅色四项自定义配色与深色定制配色对照"></td>
+</tr>
+</table>
+
+<img src="docs/assets/density-modes-zh.png?v=1.0.1" width="100%" alt="v1.0.1 三档自适应密度（Full / Compact-Text / Icons-Only）与 Minimal 极简折叠态对照">
+
+<table>
+<tr><th width="50%">右侧边栏 · 当前会话（四视图入口）</th><th width="50%">右侧边栏 · 全局洞察（跨会话总览）</th></tr>
+<tr>
+<td width="50%" valign="top"><img src="docs/assets/panel-session-zh.png?v=1.0.1" width="100%" alt="侧边栏四标签页与当前会话 Token 用量、预估费用及缓存命中率"></td>
+<td width="50%" valign="top"><img src="docs/assets/panel-insights-zh.png?v=1.0.1" width="100%" alt="全局洞察视图：Credits 额度、总消耗、预估费用、近 7 天柱状图与热力图"></td>
 </tr>
 </table>
 
 <table>
 <tr><th width="50%">每日 / 每周活动</th><th width="50%">按模型统计用量（含缓存命中率列）</th></tr>
 <tr>
-<td width="50%"><img src="docs/assets/usage-overview-zh.png?v=0.9.8" width="100%" alt="Token 用量活动概览，支持每日和每周贡献图"></td>
-<td width="50%"><img src="docs/assets/usage-details-zh.png?v=0.9.8" width="100%" alt="按模型统计柱状图、额度池汇总及含缓存命中率列的明细表"></td>
+<td width="50%"><img src="docs/assets/usage-overview-zh.png?v=1.0.1" width="100%" alt="Token 用量活动概览，支持每日和每周贡献图"></td>
+<td width="50%"><img src="docs/assets/usage-details-zh.png?v=1.0.1" width="100%" alt="按模型统计柱状图、额度池汇总及含缓存命中率列的明细表"></td>
 </tr>
 </table>
 
@@ -90,7 +101,7 @@
 ## Antigravity IDE
 
 **v0.7.0** 新增反重力自己的独立 IDE 适配。下载发布页的
-`antigrative-dashboard-ide-0.9.9.vsix`，在 IDE 扩展页选择「从 VSIX 安装」。
+`antigrative-dashboard-ide-1.0.1.vsix`，在 IDE 扩展页选择「从 VSIX 安装」。
 仅安装 IDE 的用户也可以使用，无需先装桌面 App。
 
 完全退出 IDE 后，使用带
@@ -160,7 +171,7 @@ python manage.py install --with-launcher
 <summary><strong>让 Agent 帮你安装：展开完整提示词</strong></summary>
 
 ```text
-请帮我安装并启用 Antigrative Dashboard。
+请帮我安装并启用 Antigravity Dashboard。
 仓库：https://github.com/wycocoyu/agy-context-dashboard
 1. 读取 README.md、COMPATIBILITY.md、docs/CLI.md 和 ide/README.md。先用只读检查
    分析系统、可执行文件、宿主版本和已有插件配置，区分桌面 App、Antigravity CLI
@@ -195,7 +206,7 @@ python manage.py install --with-launcher
 
 ### 打开 App 侧边栏面板
 
-用右上角开关展开右侧辅助栏，在辅助栏顶部点击 **＋ → Extensions → Antigrative Dashboard**，即可打开插件的常驻侧边栏面板。顶部提供四个顶层视图切换，按常用优先级依次为：**每日/每周活动**、**按模型用量**（含额度池汇总与按模型缓存命中率列）、**当前会话**（速度 / 缓存 / 上下文卡片、`审计` 文件与命令弹窗、USD 估算费用与多代理拆解），以及**全局洞察**（Prompt / Flow Credits、跨会话总消耗、近 7 天柱状图、热力图与高频项目/技能/工具排行）。头部另附 `汉` 一键开关，可热切换 Antigravity 宿主界面汉化；点卡片切换详情且移开鼠标不隐藏，也可随时从输入框用量卡打开独立大图窗口。
+用右上角开关展开右侧辅助栏，在辅助栏顶部点击 **＋ → Extensions → Antigravity Dashboard**，即可打开插件的常驻侧边栏面板。顶部提供四个顶层视图切换，按常用优先级依次为：**每日/每周活动**、**按模型用量**（含额度池汇总与按模型缓存命中率列）、**当前会话**（速度 / 缓存 / 上下文卡片、`审计` 文件与命令弹窗、USD 估算费用与多代理拆解），以及**全局洞察**（Prompt / Flow Credits、跨会话总消耗、近 7 天柱状图、热力图与高频项目/技能/工具排行）。头部另附 `汉` 一键开关，可热切换 Antigravity 宿主界面汉化；点卡片切换详情且移开鼠标不隐藏，也可随时从输入框用量卡打开独立大图窗口。
 
 如果 Antigravity Desktop `2.33.0+` 通过常规 Dock / 快捷方式启动，或因 `quitAndInstall()` 自动更新重启而丢失了命令行参数，内嵌条会进入 `missing-debug-port` 诊断状态。此时侧边栏面板仍可直接打开，并在顶部提示条提供：
 
@@ -223,125 +234,46 @@ python manage.py install --with-launcher
 
 `python manage.py install --panel-only` 关闭内嵌挂载，只安装原生 sidecar 面板。需要账号原生 UI Extensions 已开放；这个模式不能保证出现模型旁的缩略条。
 
-## 上下文窗口
+### Remote SSH 远程窗口支持
 
-状态栏分别常驻额度环形指示（`5h` / `周`）与上下文占用百分比：悬停额度可查看剩余百分比、重置倒计时与耗尽预测，并在同组或跨组额度间切换；悬停上下文可查看已用 Token 与容量、宿主 8 分类构成、压缩记录与请求趋势。数值来自最近请求开始时的 `contextWindowMetadata.estimatedTokensUsed` / `maxContextTokens`，由宿主估计。不是会话累计输入量，也不是生成中的实时 Token 计数。
+在 Remote SSH 窗口中默认零配置通过渲染层 Connect-RPC 直连显示远程指标（不可达时自动降级保留共享额度），也支持可选 SSH 回环隧道转发：
 
-缺少容量时显示“容量不可用”，不按模型名称猜测上限。压缩上下文后允许占用下降；切换对话不会沿用上一个对话的数值。上下文与 tok/s、缓存统计一起按账户和对话保存，历史恢复值注明保存时间。
+<details><summary>展开查看可选 SSH 回环转发配置</summary>
 
-### 语言与缓存
+1. **远程 Linux 端**：`python3 manage.py install --panel-only --remote-bridge-port 17891`
+2. **本机 `~/.ssh/config`**：添加 `LocalForward 127.0.0.1:17891 127.0.0.1:17891`
+3. **本机客户端**：`python3 manage.py set-remote-endpoint user@your-host 17891`
 
-默认英文。首次使用时，主对话上下文控件旁会出现轻量双语提示；点击后打开详情并定位到底部的 **English / 简体中文 / 繁體中文** 按钮。侧栏和用量窗口也提供三语言菜单，切换不改变 UTC+8 的统计日期。语言选择会保存，之后仍可随时在上下文详情底部切换。选择语言或关闭提示后不再重复引导；关闭提示不会改变已有语言，保存失败会显示提示并允许重试。子代理界面不重复显示首次引导。
+</details>
 
-缓存卡按 DSH 逻辑展示总 Token、带显式前缀的 **缓存命中率：**（`Cache hit rate:` / `快取命中率：`）蓝色胶囊、缓存读取、未缓存输入与输出；缓存写入非零时额外展示一行，并在检测到 `cacheRead === 0` 且未缓存输入 `>= 100K` 时在多代理拆分中记录零缓存未命中峰值（`cacheMissSurges`）。
+## 统计口径与技术文档
 
-Antigravity 的 `inputTokens` 是未缓存输入。缓存命中率 = 缓存读取 ÷（未缓存输入 + 缓存读取 + 缓存写入），按请求输入总量加权，不把缓存写入算作命中；`总 Token = 总输入 + 输出`。
+核心指标全部仅保存白名单数值与统计摘要（不落盘对话正文、凭据或密钥），完整算法与边界见专题文档：
 
-上下文卡与额度卡已拆分为独立胶囊：额度卡集中呈现 `5h` / `周额度` 进度、剩余时间预测与同账号其他额度组；上下文卡展示宿主 `8` 分类精确构成（清单/条形双视图、定制注入明细、高负载工具 `>= 20K`/`>= 50K` 告警）、压缩/检查点趋势折线图以及语言与宿主汉化开关。
-
-## 数据如何计算
-
-| 项目 | 口径 |
-| --- | --- |
-| 对话轮数 | 轨迹中用户输入（`USER_INPUT`）的总次数 |
-| 轨迹步数 | 全量分页后的轨迹步骤总数，含用户输入、模型回复、工具调用、命令执行与压缩/检查点 |
-| 请求次数 | 按 `responseId` / `messageId` 去重后的模型调用次数（单轮可含多次工具回调请求） |
-| 会话解码 TPS | 合格请求的总输出 token（含思考）÷ 对应流式时长总和 |
-| 最近一次 TPS | 最近一次合格请求总输出 token ÷ 流式时长；计时异常、短窗口或缺失时不显示速率 |
-| 端到端速率（E2E） | 合格请求总输出 token ÷（TTFT + 流式时长）总和；单独展示，不混入纯流式速度 |
-| TTFT | 首个流式/思考 token 耗时（非正文首字）；展示会话 P50 中位数与最近单次 |
-| 模型用时 | 请求 TTFT 与流式生成时长相加 |
-| 工具用时 | 工具执行区间合并后统计，重叠时间不重复计数 |
-| 5h / 周余额 | 账户返回的 `remainingFraction`；不是货币金额 |
-| 重置倒计时 | 账户返回的 `resetTime` 与当前时间之差 |
-
-统计来自已完成请求，约每 2.2 秒检查，不宣称逐 token 的即时速率。额度每 60 秒刷新，倒计时每秒走动。
-思考 token 会随正文 token 一同计入总输出分子，以严格对齐包含思考阶段的 `streamingDuration`；缺少总输出计数时回退到可用分项并明确标注。缺少有效时长的请求不会计入 TPS。失联显示不可用或明确的旧数据状态。
-
-### 计时异常处理
-
-输出集中到达时，宿主可能只记录到几毫秒的流式时长，导致 TPS 虚高。这个短窗口不一定代表模型实际生成所用的时间。插件会先检查计时质量，再计算会话 TPS，不给速度设硬编码上限（如 250/600 tok/s），也不编造更长的生成时长。
-
-- **不计入 TPS 的请求：** Token 统计范围不一致、同一请求的重复记录冲突、多次尝试的用量不同但没有各自对应的计时、计算结果无效，以及任何 `streamingDuration < 1.0s` 或 `outputTokens < 30` 的短窗口／低输出样本（`short-window`）。
-- **辅助诊断规则：** 仍保留纯工具短窗口（时长 < 1 秒、TTFT ≥ 2 秒且 TTFT ≥ 20 倍流式时长）与同模型基线检查（至少 5 次合格采样后，短时速率超过 `max(中位数 × 8，中位数 + MAD × 12)`）。
-- **仍计入的请求：** 满足 `streamingDuration >= 1.0s` 且 `outputTokens >= 30` 的持续高速度请求仍正常计入统计，不因数值高就设限排除。异常请求的 Token、缓存与 TTFT 用量也完整保留；排除速率不等于删除请求或用量。
-- **界面与历史恢复：** 最近一次请求计时不可靠时显示“计时异常”，不拿上一条请求的速度代替。没有有效样本时 TPS 显示不可用。旧算法保存的速率会等待完整对话数据重新计算，Token、缓存与上下文保留，重载后不会重新使用旧的未校验 TPS。
-
-这些规则是针对宿主耗时摘要的保守判断，不代表已证实输出缓冲。当前本地接口未提供逐片段时间记录，无法恢复缺失的服务端生成时间。使用界面只保留简洁的统计方式，具体筛选规则在项目说明中解释。桌面版和独立 IDE 共用这些规则。详见[计时策略与限制](docs/TPS.md)，参考 DSH 讨论 [#7960](https://github.com/deepseek-ai/deepseek-harness/discussions/7960) 和 [#6129](https://github.com/deepseek-ai/deepseek-harness/discussions/6129)。
-
-### 紧凑卡片的统计口径
-
-卡片只展示可读取的数值，缺失值显示「—」，不逐项添加不等号，也不展开计算说明或缺失请求计数。后台仍保留不完整／未知覆盖标记；可读数据的合计可能缺少宿主未返回的用量，不代表完整账单。缓存率只使用可校验输入，零输入不编造百分比。正文／思考输出独立于缓存是否可用，继续计入统计。
-
-## 对话统计持久化
-
-上下文百分比使用当前请求的宿主窗口容量。紧凑卡片只展示占用、已用／总量、采样模型和两档额度／重置时间；重复容量参考、未知压缩字段、日志文本估算和计算说明不占据卡片。后台仍分别保存来源参考与保守诊断，不改变宿主分母或计费用量。详见[上下文口径与资料来源](docs/CONTEXT_LIMITS.md)。
-
-已完成请求的 tok/s、cache 和数值统计自动保存到 `~/.gemini/antigravity/sidecar_data/antigravity-pulse/panel/data/history-v1/<账号哈希>/<对话ID>.json`。重载、重启、更新或重装插件都会保留。接口临时返回空数据或较少采样时，不覆盖已有有效统计；恢复值会在详情中注明保存时间。真实 0% 缓存命中率正常显示。
-
-只保存白名单数值、模型和状态，不保存正文、标题、邮箱或凭据。确认当前账号后才读取该账号的历史。已经缺失的请求时长无法重建。打开 Antigravity 后执行 `node tools/check-live-history.mjs`，可补存当前接口仍能读取的所有历史对话，并验证重启恢复。
-
-## 长对话采集
-
-步骤与生成统计分开按偏移读取，生成元数据请求关闭消息正文。大段文本和工具输出流式跳过，后续刷新只重读可能变化的尾部。已移除整包 512MiB 响应限制；统计缓存仍有基于资源测试选择的工程预算，超出时明确提示，不截断后伪造完整统计。详见[采集策略、实验依据与限制](docs/LONG_CONVERSATIONS.md)。
-
-## 本地 Token 用量统计
-
-在侧边栏顶部的**每日/每周活动**、**按模型用量**页签，或点击缓存卡的「查看用量统计」均可查看完整本机统计。活动概览提供每日 / 每周贡献热力图；按模型统计提供日、周、月堆叠柱状图、上方额度池汇总条（`Gemini` / `Claude / 3p` / `本地`），以及包含**总 Token、未缓存输入、缓存读取、缓存命中率、缓存写入与输出**的明细表。大体积纯 JSON 账本会自动下沉至磁盘 worker，防止突破 192 MiB 内存限制，同时已消除空元数据与 SQLite WAL 重试带来的虚假局部警告。图表颜色跟随当前主题和强调色；K/M/B 摘要最多保留一位小数，表格与悬停提示保留精确数值。
-
-首次使用提示说明历史导入、统计范围与隐私。点击「知道了」后保存完成状态，重启、换语言、换主题都不会重复弹出。直接关闭窗口则保留提示；保存失败可以重试。
-
-打开「查看用量统计」，或点击窗口右上角的「刷新用量」按钮，才会请求历史同步；普通轮询、卡片刷新和额度重置不会启动历史扫描。每轮导入使用稳定、有上限的候选队列，分片处理；中途新建的主会话留到下一次请求的导入，不可读取或超出预算的记录保留为部分覆盖。当前对话中新完成的请求仍随正常轮询记录。独立的 `usage-v1` 用量账本按账号去重，只保存时间、模型、Token 计数和哈希标识，不保存正文、回复或凭据。桌面与 IDE 账本独立。删除对话不会扣除已记录用量；这是本地已观察到的消耗，不是供应商账单，缺失或已删除的历史可能无法补齐。天、月按 UTC+8 划分，周一开始一周。
-
-桌面路径：`~/.gemini/antigravity/sidecar_data/antigravity-pulse/panel/data/usage-v1/`（宿主可覆盖数据目录）。IDE 路径：其用户目录下的 `User/globalStorage/you-should-know-me.antigrative-dashboard-ide/usage-v1/`。清理前先停用插件；再次启用并打开用量窗口后，仍可读取的对话可以重新导入。`history-v1` 继续单独保存每个对话最新的统计快照。[统计口径、清理和边界](docs/USAGE.md)。
-
-## 配套侧边栏
-
-如果你在 Antigravity 桌面端里同时推进多条会话、多个需求，可以搭配体验同系列的 [`wycocoyu/agy-project-sidebar`](https://github.com/wycocoyu/agy-project-sidebar)：
-
-<table>
-<tr><th width="58%">收件箱 / 待续 / 延后悬停工作流</th><th width="42%">原生 Display Options 菜单集成</th></tr>
-<tr>
-<td width="58%" valign="top"><img src="docs/assets/companion-inbox-zh.png" width="100%" alt="AGY Project Sidebar 收件箱分区与悬停待续、延后浮层、已完成按钮，以及下方折叠延后区与 Idle"></td>
-<td width="42%" valign="top"><img src="docs/assets/companion-menu-zh.png" width="100%" alt="Antigravity 原生 Display Options 菜单内置 Status + Requirement 分组、收件箱工作流开关与 24h 自动退场时限"></td>
-</tr>
-</table>
-
-- **多维顺序分组（`Group By` 扩展）**：直接在官方 `Display Options -> Group By` 菜单中接入 `Requirement` 维度（如 `Status + Requirement`、`Project + Requirement`），支持多层折叠与原生行渲染，不在侧边栏额外加搜索条或工具栏。
-- **收件箱工作流（`Inbox` / `待续` / `延后` / `24h` 自动退场）**：将「点开消蓝点（已读）」与「办完归档（`Settle`）」拆开，悬停即可一键标记已完成、锁定待续保留或预设延后唤醒，并支持 5 秒内一键撤销。
-- **零冲突平滑共存**：同样以标准用户态 Sidecar + CDP 插件运行（`~/.gemini/config/plugins/agy-project-sidebar/`），不修改任何 Antigravity 安装包文件，重启和软件升级均不丢失，与 `agy-context-dashboard` 互不冲突。
-
-```bash
-git clone https://github.com/wycocoyu/agy-project-sidebar.git
-cd agy-project-sidebar
-python3 manage.py install
-```
+| 主题 | 说明 | 文档 |
+| --- | --- | --- |
+| 速率与计时质量 | 会话/最近 TPS、E2E、TTFT 与短窗口过滤规则 | [docs/TPS.md](docs/TPS.md) |
+| 上下文窗口 | 宿主 8 分类构成、压缩趋势与容量来源 | [docs/CONTEXT_LIMITS.md](docs/CONTEXT_LIMITS.md) |
+| 长对话采集 | 偏移分页流式跳过正文与 192 MiB 堆预算控制 | [docs/LONG_CONVERSATIONS.md](docs/LONG_CONVERSATIONS.md) |
+| 本地用量与持久化 | `history-v1` / `usage-v1` 账本路径与清理说明 | [docs/USAGE.md](docs/USAGE.md) |
+| 稳定性与恢复 | 调试端口自愈、更新回滚与异常恢复矩阵 | [docs/ROBUSTNESS.md](docs/ROBUSTNESS.md) |
 
 ## 宿主界面汉化与开源致谢
 
-侧边栏顶部 `汉` 按钮与内嵌上下文卡底部的「宿主界面汉化」开关支持一键开启/关闭 **Antigravity 桌面宿主界面的简体中文翻译**（无侵入 CDP 实时渲染 + `WeakMap` 原文缓存，无需修改 `app.asar` 或重启客户端，关闭开关即无损还原原始英文文本），并且不包含任何第三方皮肤、主题色覆写或侧栏布局改动；同时保护模型选择器锚点与用户自定义项目名称不被误译。
+侧边栏顶部 `汉` 按钮与上下文详情底部的「宿主界面汉化」开关支持无侵入实时汉化 Antigravity 桌面宿主（基于 CDP + `WeakMap` 原文缓存，关闭即无损还原）。词典（`compat/host-i18n-dict.json`）整合融合自以下 **MIT** 开源项目，在此致谢：
 
-本插件的宿主界面汉化词典（`compat/host-i18n-dict.json`）在遵循各自开源许可的前提下整合、融合了以下三套 **MIT** 社区开源项目，在此致谢：
-
-- [`yiheng8023/antigravity-chinese`](https://github.com/yiheng8023/antigravity-chinese)（MIT）：2.34.0 主力模块化词库基底、动态正则规则与用户内容边界保护
-- [`antigravity-cn-community/Antigravity-Chinese-Localization`](https://github.com/antigravity-cn-community/Antigravity-Chinese-Localization)（MIT）：桌面设置、远程会话术语及模型/思考深度徽标译法补充
-- [`ruxiayu/antigravity-zh-cn`](https://github.com/ruxiayu/antigravity-zh-cn)（MIT）：上下文作用域词条（如 `New` / `Low` / `Medium` / `High`）与拆散 DOM 节点翻译补充
+- [`yiheng8023/antigravity-chinese`](https://github.com/yiheng8023/antigravity-chinese) · [`antigravity-cn-community/Antigravity-Chinese-Localization`](https://github.com/antigravity-cn-community/Antigravity-Chinese-Localization) · [`ruxiayu/antigravity-zh-cn`](https://github.com/ruxiayu/antigravity-zh-cn)
 
 ## 兼容性
 
-当前实机验证：**Windows 11 / Antigravity App 2.21.1、2.22.0**；2.22.0 的真实上下文读取和合并悬浮卡已验收。Linux/macOS 的完整登录界面仍需用户实机验证，自动化覆盖范围见兼容性文档。
-
-独立 Antigravity IDE 2.5.5 / 2.6.0 提供单独 VSIX，Windows 已实机验证。其他编辑器扩展和 DSH 暂不支持。Linux/macOS 桌面版已适配原生路径、后台发现和 shell 安装器；IDE 有自动化覆盖，完整登录界面仍待实机验收，详见兼容性文档。
-参考 DSH Rail Music 的项目组织与文档风格，但安装接口不同，不能使用 `dsh plugin add` 安装 Antigrative Dashboard。
-
-[完整边界与更新策略 →](COMPATIBILITY.md) · [计时策略 →](docs/TPS.md) · [采集与长对话 →](docs/LONG_CONVERSATIONS.md) · [用量口径 →](docs/USAGE.md)
-生成 README 截图属于可选开发任务：`node tools/build-readme-assets.mjs` 需要 Playwright（或指定 `PLAYWRIGHT_MODULE`），会直接用当前源码渲染中英文 2x 演示图，非安装依赖。
+- **桌面端**：实机验证 Windows 11（Antigravity `2.21.1` / `2.22.0` / `2.33.0+` / `2.34.0+`）；Linux / macOS 已通过自动化检查与路径适配（[完整兼容性与边界 →](COMPATIBILITY.md)）。
+- **独立 IDE**：单独 VSIX 支持 Antigravity IDE `2.5.5` / `2.6.0`（不支持 DSH `dsh plugin add`）。
 
 ## 常见问题
 
 <details><summary><strong>安装后没出现？</strong></summary>
 
-确认已完全退出主进程再启动 App，不只是关闭窗口。执行 `python3 manage.py status`（Windows 用 `python`），查看 `debugPortAvailable`、`inlineIntegration` 与 `debugPortHint`；若为 Antigravity 2.33.0+ 且提示缺少调试端口（`missing-debug-port`），请改用 `python3 manage.py install-launcher` 生成的调试启动器打开（如 macOS 的 `~/Applications/Antigravity (Debug).app`），执行 `python3 manage.py launch --relaunch`，或在侧边栏 **＋ → Extensions → Antigrative Dashboard** 中点击一键重开按钮。也可检查 `~/.gemini/antigravity/sidecar_data/antigravity-pulse/panel/logs/sidecar.log` 和 `data/integration-state.json`。日志不要直接公开，其中宿主产生的日志可能含本机信息。
+确认已完全退出主进程再启动 App，不只是关闭窗口。执行 `python3 manage.py status`（Windows 用 `python`），查看 `debugPortAvailable`、`inlineIntegration` 与 `debugPortHint`；若为 Antigravity 2.33.0+ 且提示缺少调试端口（`missing-debug-port`），请改用 `python3 manage.py install-launcher` 生成的调试启动器打开（如 macOS 的 `~/Applications/Antigravity (Debug).app`），执行 `python3 manage.py launch --relaunch`，或在侧边栏 **＋ → Extensions → Antigravity Dashboard** 中点击一键重开按钮。也可检查 `~/.gemini/antigravity/sidecar_data/antigravity-pulse/panel/logs/sidecar.log` 和 `data/integration-state.json`。日志不要直接公开，其中宿主产生的日志可能含本机信息。
 
 </details>
 
@@ -359,7 +291,7 @@ python3 manage.py install
 
 <details><summary><strong>升级 Antigravity 后怎么办？</strong></summary>
 
-App 更新不会覆盖用户插件目录中的适配器。在 2.32 及更早版本中，后台会自动重新发现端口、凭据和渲染窗口并重连。在 **Antigravity 2.33.0+** 中，应用内自动更新调用 `quitAndInstall()` 重启时会丢弃 `--remote-debugging-port=0 --remote-debugging-address=127.0.0.1` 参数：从 `v0.9.5` 起，Sidecar 会同步自愈 Windows / Linux 启动快捷方式，且内嵌模式已默认开启 `autoRelaunchDebug`（启动前 `20` 秒窗内单次自愈 + `60` 秒滑窗最多放行 `2` 次防循环），更新重启后会自动帮你带参重拉并重新挂载；如需关闭自动重拉，可在侧边栏面板（**＋ → Extensions → Antigrative Dashboard**）取消勾选自动恢复选项，并改用一键调试重开、`python3 manage.py launch --relaunch` 或生成的调试启动器打开。未显示时检查 `python3 manage.py status`；宿主接口变化时可先用原生侧面板。不要把旧归档覆盖新版应用。详见[鲁棒性分析](docs/ROBUSTNESS.md)。
+App 更新不会覆盖用户插件目录中的适配器。在 2.32 及更早版本中，后台会自动重新发现端口、凭据和渲染窗口并重连。在 **Antigravity 2.33.0+** 中，应用内自动更新调用 `quitAndInstall()` 重启时会丢弃 `--remote-debugging-port=0 --remote-debugging-address=127.0.0.1` 参数：从 `v0.9.5` 起，Sidecar 会同步自愈 Windows / Linux 启动快捷方式，且内嵌模式已默认开启 `autoRelaunchDebug`（启动前 `20` 秒窗内单次自愈 + `60` 秒滑窗最多放行 `2` 次防循环），更新重启后会自动帮你带参重拉并重新挂载；如需关闭自动重拉，可在侧边栏面板（**＋ → Extensions → Antigravity Dashboard**）取消勾选自动恢复选项，并改用一键调试重开、`python3 manage.py launch --relaunch` 或生成的调试启动器打开。未显示时检查 `python3 manage.py status`；宿主接口变化时可先用原生侧面板。不要把旧归档覆盖新版应用。详见[鲁棒性分析](docs/ROBUSTNESS.md)。
 
 </details>
 
@@ -373,19 +305,17 @@ python manage.py package
 
 ZIP 与 SHA256 文件输出到 `dist/`。打包使用文件白名单，不包含账号配置、凭据、日志、SDK 缓存或 App 归档。
 
-[开发说明 →](docs/DEVELOPMENT.md) · [版本记录 →](CHANGELOG.md)
+[开发说明 →](docs/DEVELOPMENT.md) · [贡献指南 →](CONTRIBUTING.md) · [版本记录 →](CHANGELOG.md)
 
 ## 许可
 
-Antigrative Dashboard 源码使用 [MIT](LICENSE) 许可证。项目不分发 Antigravity 的二进制、SDK 或 App 备份。Antigravity 名称属于其各自权利人，本项目与其无官方隶属关系。
+Antigravity Dashboard 源码使用 [MIT](LICENSE) 许可证。项目不分发 Antigravity 的二进制、SDK 或 App 备份。Antigravity 名称属于其各自权利人，本项目与其无官方隶属关系。
 
 ## App 手动更新
 
-在**上下文详情 → 右下角「检查更新」**中手动检查稳定发行版。更新器只更新 App 插件，校验官方包与 SHA-256，保留设置和用量记录；安装完成后可重新加载插件。失败或中断时保留回滚与恢复材料。IDE 和 CLI 仍使用各自安装方式。[校验、恢复及边界说明](docs/UPDATES.md)。
+在 **上下文详情 → 右下角「检查更新」** 中手动检查稳定发行版。更新器只更新 App 插件，校验官方包与 SHA-256，保留设置和用量记录；安装完成后可重新加载插件。失败或中断时保留回滚与恢复材料。IDE 和 CLI 仍使用各自安装方式。[校验、恢复及边界说明](docs/UPDATES.md)。
 
 ---
 
 > **Fork 与独立演进说明：** 本仓库 **`wycocoyu/agy-context-dashboard`** Fork 自原作者仓库 [`ATtacK030130/antigrative-dashboard`](https://github.com/ATtacK030130/antigrative-dashboard)，目前已在原 [MIT 协议](LICENSE) 下从 `v0.8.12` 基线起与原作者分开设计、独立演进，同时完整保留原版权署名及现有用户配置、`history-v1`、`usage-v1` 与 IDE 存储路径兼容性。
->
-> **配套侧边栏插件推荐：** 如果你还希望在 Antigravity 左侧会话栏按需求聚合会话、使用类似收件箱的待办确认工作流，欢迎一并体验 [`wycocoyu/agy-project-sidebar`](https://github.com/wycocoyu/agy-project-sidebar)。它采用同样的无侵入 Sidecar + CDP 架构，与本仪表盘完全共存、互不干扰。
 

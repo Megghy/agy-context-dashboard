@@ -61,7 +61,9 @@ module.exports = function createUpdateMenu({root,row,language,setMarkup,request,
  function render(){
   const signature=JSON.stringify([language.language,state,passiveHint,busy]);if(signature===lastRender)return;lastRender=signature;
   const triggerText=w('检查更新','Check for updates','檢查更新');
-  const clearedByState=['current','installed','reloading'].includes(state.state);
+  const newerVer=(a,b)=>{const p=s=>/^(\d+)\.(\d+)\.(\d+)$/.exec(String(s||''));const x=p(a),y=p(b);if(!x||!y)return false;for(let i=1;i<=3;i++){const d=Number(x[i])-Number(y[i]);if(d)return d>0;}return false;};
+  const clearedByCurrent=state.state==='current'&&!newerVer(passiveHint.latestVersion,state.latestVersion||state.currentVersion);
+  const clearedByState=clearedByCurrent||['installed','reloading'].includes(state.state);
   const hintActive=state.state==='available'||(passiveHint.available&&!clearedByState);
   const hintVersion=(state.state==='available'?state.latestVersion:passiveHint.latestVersion)||null;
   const badge=button.querySelector('#check-update-badge'),verEl=button.querySelector('#check-update-ver');

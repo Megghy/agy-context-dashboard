@@ -28,7 +28,8 @@ try{
  assert.equal(await frame.evaluate(()=>window.top===window),false);assert.equal(await frame.locator('[id="antigravity.agentSidePanelInputBox"]').count(),0,'No legacy IDE input ID in Jetski');
  assert.equal(await frame.evaluate(()=>calls.at(-1).conversationId),ids.main);assert.equal(await widget.locator('#tps').textContent(),'50.0');
  for(const name of ['speed','cache','context']){await widget.locator(`[data-card=${name}]`).click();await widget.locator(`#${name}-card`).waitFor({state:'visible'});await page.keyboard.press('Escape');}
- await page.setViewportSize({width:350,height:800});await frame.waitForFunction(()=>{const w=document.getElementById('ag-pulse-status-bar');return w?.dataset.density==='icons'&&w.dataset.layout==='ready'&&!w.dataset.motion;});
+ await page.setViewportSize({width:350,height:800});await frame.waitForFunction(()=>{const w=document.getElementById('ag-pulse-status-bar');return ['full','compact-text','snug-rounds','mini-rounds','tight-text','snug-text','trim-hit','dense-text'].includes(w?.dataset.density)&&w.dataset.layout==='ready'&&!w.dataset.motion;});
+ await page.setViewportSize({width:240,height:800});await frame.waitForFunction(()=>{const w=document.getElementById('ag-pulse-status-bar');return w?.dataset.density==='icons'&&w.dataset.layout==='ready'&&!w.dataset.motion;});
  assert.equal(await widget.locator('.bar .chip:visible').count(),3);
  await page.setViewportSize({width:760,height:800});
  await frame.evaluate(()=>{document.getElementById('child-pane').hidden=false;document.querySelector('#child-pane .editor').focus();});

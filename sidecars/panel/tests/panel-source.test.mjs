@@ -30,7 +30,7 @@ test('sidecar version badge follows the installed manifest and invalidates all a
  const render=version=>panelPageSource({readManifest:()=>JSON.stringify({name:'antigravity-pulse',version})});
  const first=render('9.8.7'),next=render('9.8.8');
  assert.equal(badge(first),'v9.8.7');assert.equal(badge(next),'v9.8.8');
- assert.match(first,/id="panel-name" title="Antigrative Dashboard v9\.8\.7"/);
+ assert.match(first,/id="panel-name" title="Antigravity Dashboard v9\.8\.7"/);
  const keys=html=>[...html.matchAll(/(?:theme\.css|styles\.css|app\.js)\?v=([a-f0-9]{16})/g)].map(match=>match[1]);
  assert.equal(new Set(keys(first)).size,1);assert.equal(new Set(keys(next)).size,1);
  assert.notEqual(keys(first)[0],keys(next)[0],'Manifest-only changes must invalidate the served page assets');

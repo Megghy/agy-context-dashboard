@@ -98,16 +98,21 @@ export class DelegatedUsage {
     const summaries=this.client.reader?.summaries||{};
     const selfSum=summaries[task.id]||Object.entries(summaries).find(([k])=>k.toLowerCase()===task.id)?.[1]||null;
     const selfMeta=selfSum?.trajectoryMetadata;
+    const selfMember=task.swarmMembers?.byId?.get(task.id)||task.selfSwarmMember||null;
     const selfIsSub=Boolean(selfMeta?.parentConversationId||selfMeta?.subagentSpec||Number(selfMeta?.nestingDepth)>0);
-    const rootDesc=agentDescriptor(task.id,{isRoot:!selfIsSub,isSubagent:selfIsSub,selfMember:task.selfSwarmMember||null,summaries,swarmMembers:task.swarmMembers});
+    const rootDesc=agentDescriptor(task.id,{isRoot:!selfIsSub,isSubagent:selfIsSub,selfMember,summaries,swarmMembers:task.swarmMembers});
     const childSets=[...task.children].filter(id=>task.sources.has(id)).map((id,idx)=>{
       const desc=agentDescriptor(id,{isRoot:false,summaries,swarmMembers:task.swarmMembers});
       const label=desc.label==='Worker'?`Worker #${idx+1}`:desc.label;
-      return {rows:task.sources.get(id).rows,role:desc.role,label,modelHint:desc.modelHint};
+      const member=task.swarmMembers?.byId?.get(id)||null;
+      return {rows:task.sources.get(id).rows,role:desc.role,label,modelHint:desc.modelHint,
+        ...(member?{workspaceMode:member.workspaceMode??null,killed:member.killed===true}:{})};
     });
     const result=aggregateTaskUsage(task.sources.get(task.id)?.rows||[],childSets,{
       subagents:task.children.size,loadedSubagents:childSets.length,state:task.truncated||task.staleSources.size?'partial':state,
       rootRole:rootDesc.role,rootLabel:rootDesc.label,rootModelHint:rootDesc.modelHint,
+      ...(selfMember?{rootWorkspaceMode:selfMember.workspaceMode??null,rootKilled:selfMember.killed===true}:{}),
+      ...(task.swarmMembers?{isSwarm:true}:{}),
     });
     // On restart, numeric saved task totals remain visible until the first pass
     // can account for every known child. They are never treated as fresh/complete.

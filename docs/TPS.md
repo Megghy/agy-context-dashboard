@@ -52,6 +52,9 @@ Antigravity's summary-only telemetry (`chatModel.timeToFirstToken`,
   TTFT at least 2 seconds, and TTFT at least 20 times the streaming duration.
   Tool-only association requires the generator's step indices; no association is
   inferred from neighboring steps.
+- Non-tool single-chunk flush (`short-burst`) with a stream under 0.3 seconds,
+  at least 30 output tokens, TTFT at least 2 seconds, and TTFT at least 15 times
+  the streaming duration.
 - Short samples (`short-outlier`) above `max(8 × median, median + 12 × MAD)` of
   at least five otherwise eligible samples (`duration >= 1s` and
   `outputTokens >= 30`) from the same model, provider and token basis.
@@ -65,13 +68,25 @@ windows.
 
 ## Display and persistence
 
-An unreliable latest request shows **Timing uncertain / 计时异常**, never the prior
-request's rate. The UI keeps tooltips concise; exclusion counts and reasons
-remain numeric diagnostic metadata. Token counts, cache metrics, and TTFT
-(latest + P50) are retained even when a sample's rate is quarantined. If no
-eligible samples exist, decode and E2E speeds are unknown.
+Quarantined latest requests are classified into distinct display states rather
+than borrowing the prior request's rate as the latest decode speed:
 
-Old saved rates (`rateVersion !== 3`) are masked as legacy until the full
+- **`short`** (only `short-window`, no burst or scope error): displays **Short
+  sample / 短样本** with a concise numeric reference subline (`tokens · dur ·
+  prior qualified rate` when on the same model, or `excluded` after a model
+  switch).
+- **`buffered`** (`short-tool-window`, `short-burst`, or `short-outlier`):
+  displays **Buffered burst / 缓冲突发** with the latest token count, duration,
+  and single-request E2E reference.
+- **`unreliable`** (`token-scope`, `duplicate-scope`, `retry-scope`, or
+  `nonfinite-rate`): displays **Timing uncertain / 计时不确定**.
+
+The UI keeps tooltips concise; exclusion counts and reasons remain numeric
+diagnostic metadata. Token counts, cache metrics, and TTFT (latest + P50) are
+retained even when a sample's rate is quarantined. If no eligible samples exist,
+decode and E2E speeds are unknown.
+
+Old saved rates (`rateVersion !== 4`) are masked as legacy until the full
 trajectory can be read and recalculated. Other saved usage survives. Full
 coverage recalculations replace prior rates even if fewer samples now qualify.
 Partial or regressing host responses do not replace the saved full coverage

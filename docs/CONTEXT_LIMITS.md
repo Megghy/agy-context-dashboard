@@ -4,9 +4,9 @@
 
 The main context percentage remains:
 
-`estimatedTokensUsed / maxContextTokens`
+`usedTokens / maxContextTokens`
 
-Both counters come from the current request's Antigravity `contextWindowMetadata`. The denominator is the host's active window, not a guessed provider specification. A valid host limit is never replaced by a larger model catalog value. Missing/invalid/zero host limits leave the percentage unavailable; a known provider model cannot fabricate it. Zero usage remains zero, and over-capacity estimates remain visible as such.
+The numerator uses a three-tier calibrated hierarchy: (1) `StreamAgentStateUpdates.contextWindowUsage.estimatedTokensUsed` when fetched (`> 0`), (2) settled `lastChat.usage` (`inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens`), or (3) fallback to `chatStartMetadata.contextWindowMetadata.estimatedTokensUsed` (carrying forward the latest settled baseline plus positive estimate delta when a trailing turn has empty `usage` and no compaction occurred). The denominator is strictly the host's active `maxContextTokens`, not a guessed provider specification. A valid host limit is never replaced by a larger model catalog value. Missing/invalid/zero host limits leave the percentage unavailable; a known provider model cannot fabricate it. Zero usage remains zero, raw `usedFraction` stays honest in the data model, and compact UI percentages cap at `100%` alongside raw `used / max` token labels and an over-active-window tooltip when `usedTokens > maxTokens`.
 
 ## Separate reference information
 
@@ -52,7 +52,7 @@ Regressions cover host/reference disagreement, missing and invalid counters, zer
 
 ## 中文说明
 
-控件百分比仍使用宿主返回的「当前已用量 ÷ 当前窗口容量」。供应商容量在后台数据和本说明里单独作为参考，不覆盖当前会话的分母；原生规格、当前产品窗口和压缩触发阈值是不同概念。未核实的压缩阈值不展示，不套用固定数值。
+控件百分比仍以宿主返回的「当前已用量 ÷ 当前窗口容量」为准，并按三层口径校准分子：① 已拉取的有效 `StreamAgentStateUpdates` 实时总数（`> 0`）；② 已完成请求的 `usage` 实际总量（`inputTokens + cacheReadTokens + cacheWriteTokens + outputTokens`）；③ 生成中或末尾中断轮次（`usage` 为空且未触发压缩时承接前序已校准基线）回退到请求前 `estimatedTokensUsed`。数据层保留原始 `usedFraction`，紧凑 UI 百分比与圆环/进度条统一封顶在 `100%`，并保留原始 `used / max` Token 数值及超活跃窗口提示。供应商容量在后台数据和本说明里单独作为参考，不覆盖当前会话的分母；原生规格、当前产品窗口和压缩触发阈值是不同概念。未核实的压缩阈值不展示，不套用固定数值。
 
 模型 ID 的小数点和连字符写法、`word/*` 前缀、`MODEL_CLAUDE_*` 枚举及 `@default`/`@YYYYMMDD` 后缀统一规范化，精确识别已核实型号（Claude 4.5 标注 `200K`，Claude 4.6/4.7/4.8/5.5 标注 `1M`，已移除未核实的 `GPT-6.1 Sol` 容量引用）；未知或未核实型号不继承其他型号的容量。读取用量账本与图表时按规范化名称动态合并，不改写磁盘上的既有 JSON 或 SQLite 记录。恢复保存记录时重新计算派生值，并拒绝任意来源 URL、非法阈值和未知字段。
 

@@ -107,13 +107,31 @@ test('legacy rates are masked offline, then fully recalculated without dropping 
   const fixed=await new MetricsStore(client(async()=>good),{history}).snapshot({conversationId:id});
   assert.equal(fixed.speed.tps,50);assert.equal(fixed.speed.peakTps,50);assert.deepEqual(fixed.speed.recentTps,[50]);assert.equal(fixed.speed.excludedTiming,1);assert.equal(fixed.speed.measuredRequests,1);
   assert.equal(fixed.speed.cache.outputTokens,17876);assert.equal(fixed.speed.restoredFromHistory,false);
-  const saved=await history.load(a,id);assert.equal(saved.metrics.rateVersion,3);assert.equal(saved.metrics.tps,50);
+  const saved=await history.load(a,id);assert.equal(saved.metrics.rateVersion,4);assert.equal(saved.metrics.tps,50);
+});
+
+test('short and buffered statuses and latest reference fields survive safeMetrics and SessionHistory',async t=>{
+  const {history}=await fixture(t),a=scope('rate@example.test');
+  const shortRaw={trajectory:{cascadeId:id,steps:[],generatorMetadata:[
+    {chatModel:{modelDisplayName:'Model A',streamingDuration:'2s',timeToFirstToken:'1s',usage:{messageId:'1',inputTokens:'100',outputTokens:'200',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}}},
+    {chatModel:{modelDisplayName:'Model A',streamingDuration:'0.75s',timeToFirstToken:'3s',usage:{messageId:'2',inputTokens:'100',outputTokens:'66',apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}}},
+  ]}};
+  const m=trajectoryMetrics(shortRaw);
+  assert.equal(m.latestRateStatus,'short');
+  await history.save(a,id,m);
+  const loaded=(await history.load(a,id)).metrics;
+  assert.equal(loaded.latestRateStatus,'short');
+  assert.equal(loaded.latestOutputTokens,66);
+  assert.equal(loaded.latestDurationSeconds,0.75);
+  assert.equal(loaded.prevQualifiedTps,100);
+  assert.equal(loaded.prevQualifiedSameModel,true);
+  assert.ok(Math.abs(loaded.latestE2eTps-66/3.75)<1e-8);
 });
 
 test('same coverage quality correction with fewer eligible samples replaces saved rates',async t=>{
-  const {history}=await fixture(t),a=scope('a');const old=trajectoryMetrics(raw(2)),fresh={...old,measuredRequests:1,excludedTiming:1,tps:40,latestTps:null,latestRateStatus:'unreliable'};
+  const {history}=await fixture(t),a=scope('a');const old=trajectoryMetrics(raw(2)),fresh={...old,measuredRequests:1,excludedTiming:1,tps:40,latestTps:null,latestRateStatus:'buffered'};
   await history.save(a,id,old);await history.save(a,id,fresh);
-  assert.equal((await history.load(a,id)).metrics.tps,40);
+  assert.equal((await history.load(a,id)).metrics.tps,40);assert.equal((await history.load(a,id)).metrics.latestRateStatus,'buffered');
   const incomplete={...fresh,complete:false,tps:1};await history.save(a,id,incomplete);
   assert.equal((await history.load(a,id)).metrics.tps,40);
 });

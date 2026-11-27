@@ -4,7 +4,7 @@ import { render } from './render.mjs';
 import { PreferencesStore } from '../compat/preferences.mjs';
 
 const MAX_INPUT = 256 * 1024;
-const help = `Antigrative Dashboard for Antigravity CLI (Node.js 20+)
+const help = `Antigravity Dashboard for Antigravity CLI (Node.js 20+)
 Reads the official statusLine JSON from stdin. No network or transcript access.
   --preview           Render synthetic data; does not write statistics
   --preview-argon     Render synthetic Gemini, Argon weekly and Claude quotas
@@ -90,6 +90,6 @@ try {
   }
 } catch {
   // Never echo raw payload/exception text into the terminal or logs.
-  process.stdout.write('Antigrative Dashboard: --\n');
+  process.stdout.write('Antigravity Dashboard: --\n');
   process.exitCode = 1;
 }

@@ -5,11 +5,11 @@ import {MetricsStore} from '../store.mjs';
 
 const parent='11111111-1111-1111-1111-111111111111';
 const child='22222222-2222-2222-2222-222222222222';
-const sample=(id,output,cached,used)=>({trajectory:{cascadeId:id,steps:[],generatorMetadata:[{
+const sample=(id,output,cached,used)=>{const inputTotal=used-output,hit=Math.round(inputTotal*0.2);return {trajectory:{cascadeId:id,steps:[],generatorMetadata:[{
   chatModel:{modelDisplayName:'Fixture',streamingDuration:'2s',
     chatStartMetadata:{contextWindowMetadata:{estimatedTokensUsed:used,maxContextTokens:100000}},
-    usage:{inputTokens:400,cacheReadTokens:cached,outputTokens:output,responseOutputTokens:output,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}},
-}]}});
+    usage:{inputTokens:inputTotal-hit,cacheReadTokens:hit,outputTokens:output,responseOutputTokens:output,apiProvider:'API_PROVIDER_GOOGLE_GEMINI'}},
+}]}};};
 const samples={[parent]:sample(parent,100,600,44000),[child]:sample(child,180,100,12000)};
 
 function fixture(t,{trajectory}={}){

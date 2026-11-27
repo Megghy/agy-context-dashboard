@@ -1,0 +1,545 @@
+import { createServer, request } from 'node:http';
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
+const HOST_CHARS = /^[A-Za-z0-9._:@\[\]-]+$/;
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_REMOTE_HOST_LEN = 160;
+const MAX_REMOTE_RESPONSE_BYTES = 1048576;
+
+export function createUnreachableTracker({ cooldownMs = 12000, now = Date.now } = {}) {
+  const failedAt = new Map();
+  return {
+    isCoolingDown(key) {
+      if (!key) return false;
+      const at = failedAt.get(key);
+      if (at === undefined) return false;
+      if (now() - at < cooldownMs) return true;
+      failedAt.delete(key);
+      return false;
+    },
+    markFailed(key) {
+      if (key) failedAt.set(key, now());
+    },
+    markOk(key) {
+      if (key) failedAt.delete(key);
+    },
+  };
+}
+
+export function sanitizeRemoteHost(value) {
+  if (typeof value !== 'string') return null;
+  const cleaned = value.trim().replace(/^ssh:\s*/i, '').trim();
+  if (!cleaned || cleaned.length > MAX_REMOTE_HOST_LEN) return null;
+  if (!HOST_CHARS.test(cleaned)) return null;
+  return cleaned;
+}
+
+export function validateBridgePort(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const port = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) return null;
+  return port;
+}
+
+export function validateLoopbackEndpoint(raw) {
+  if (typeof raw === 'number') {
+    if (!Number.isInteger(raw) || raw < 1 || raw > 65535) return null;
+    return { hostname: '127.0.0.1', port: raw, origin: `http://127.0.0.1:${raw}` };
+  }
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 128) return null;
+  if (/^\d+$/.test(trimmed)) {
+    const port = Number(trimmed);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    return { hostname: '127.0.0.1', port, origin: `http://127.0.0.1:${port}` };
+  }
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  let parsed;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:') return null;
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) return null;
+  if (parsed.pathname && parsed.pathname !== '/') return null;
+  const host = parsed.hostname.toLowerCase();
+  if (!LOOPBACK_HOSTS.has(host)) return null;
+  const port = Number(parsed.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { hostname: '127.0.0.1', port, origin: `http://127.0.0.1:${port}` };
+}
+
+export function resolveRemoteEndpoint(remoteHost, settings) {
+  const host = sanitizeRemoteHost(remoteHost);
+  if (!host) return null;
+  const endpoints = settings?.remoteEndpoints;
+  if (!endpoints || typeof endpoints !== 'object' || Array.isArray(endpoints)) return null;
+
+  const lookup = new Map();
+  for (const [rawKey, rawVal] of Object.entries(endpoints)) {
+    if (typeof rawKey !== 'string') continue;
+    const trimmedKey = rawKey.trim();
+    if (trimmedKey === '*') {
+      lookup.set('*', { key: '*', value: rawVal });
+      continue;
+    }
+    const cleanKey = sanitizeRemoteHost(trimmedKey);
+    if (cleanKey) lookup.set(cleanKey.toLowerCase(), { key: trimmedKey, value: rawVal });
+  }
+
+  const lower = host.toLowerCase();
+  const candidates = [lower];
+  const atIdx = lower.lastIndexOf('@');
+  if (atIdx > 0 && atIdx < lower.length - 1) {
+    candidates.push(lower.slice(atIdx + 1));
+  }
+  candidates.push('*');
+
+  for (const cand of candidates) {
+    const entry = lookup.get(cand);
+    if (!entry) continue;
+    const endpoint = validateLoopbackEndpoint(entry.value);
+    if (endpoint) return { endpoint, matchKey: entry.key };
+  }
+  return null;
+}
+
+export function fetchRemoteMetrics(endpoint, input = {}, { timeoutMs = 3500, requestFn = request } = {}) {
+  const valid = validateLoopbackEndpoint(endpoint?.origin || endpoint);
+  if (!valid) return Promise.resolve({ ok: false, error: 'Invalid loopback endpoint' });
+
+  const params = new URLSearchParams();
+  if (typeof input.conversationId === 'string' && input.conversationId) params.set('conversationId', input.conversationId);
+  if (input.force === true) params.set('force', '1');
+  if (input.quotaRefresh === true) params.set('quotaRefresh', '1');
+  if (input.contextDetail === true) params.set('contextDetail', '1');
+  if (input.usageSync === true) params.set('usageSync', '1');
+  if (input.usageOnly === true) params.set('usageOnly', '1');
+  if (input.usageScope === 'local' || input.usageScope === 'account') params.set('usageScope', input.usageScope);
+  const qs = params.toString();
+  const path = qs ? `/api/metrics?${qs}` : '/api/metrics';
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    const req = requestFn(
+      {
+        hostname: valid.hostname,
+        port: valid.port,
+        path,
+        method: 'GET',
+        headers: {
+          Host: `127.0.0.1:${valid.port}`,
+          Accept: 'application/json',
+        },
+      },
+      res => {
+        let body = '';
+        let bytes = 0;
+        res.setEncoding('utf8');
+        res.on('data', chunk => {
+          bytes += Buffer.byteLength(chunk);
+          if (bytes > MAX_REMOTE_RESPONSE_BYTES) {
+            req.destroy(new Error('Remote metrics response too large'));
+            finish({ ok: false, error: 'Remote metrics response too large' });
+            return;
+          }
+          body += chunk;
+        });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            finish({ ok: false, error: `Remote metrics HTTP ${res.statusCode}` });
+            return;
+          }
+          try {
+            const parsed = JSON.parse(body);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+              finish({ ok: false, error: 'Invalid remote metrics payload' });
+              return;
+            }
+            finish({ ok: true, data: parsed });
+          } catch {
+            finish({ ok: false, error: 'Malformed remote metrics JSON' });
+          }
+        });
+        res.on('error', err => finish({ ok: false, error: err?.message || 'Remote response error' }));
+      },
+    );
+    req.on('error', err => finish({ ok: false, error: err?.message || 'Remote connection failed' }));
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('Remote metrics timeout'));
+      finish({ ok: false, error: 'Remote metrics timeout' });
+    });
+    req.end();
+  });
+}
+
+export function mergeRemoteMetrics({
+  remoteData,
+  localBase = null,
+  remoteHost,
+  liveComposerModel = null,
+  transport = null,
+  preferences,
+  theme,
+  orchestratorSettings,
+  integration,
+  update,
+}) {
+  const host = sanitizeRemoteHost(remoteHost) || String(remoteHost || '');
+  const remoteGroups = Array.isArray(remoteData?.groups) && remoteData.groups.length > 0 ? remoteData.groups : null;
+  const localGroups = Array.isArray(localBase?.groups) ? localBase.groups : [];
+  const groups = remoteGroups || localGroups;
+  return {
+    connection: remoteData?.connection || localBase?.connection || 'live',
+    groups,
+    speed: remoteData?.speed ?? null,
+    ...(remoteData?.collection ? { collection: remoteData.collection } : {}),
+    ...(remoteData?.sessionError ? { sessionError: remoteData.sessionError } : {}),
+    ...(remoteData?.error ? { error: remoteData.error } : {}),
+    ...(liveComposerModel ? { composerModel: liveComposerModel } : remoteData?.composerModel ? { composerModel: remoteData.composerModel } : {}),
+    ...(remoteData?.usage ? { usage: remoteData.usage } : localBase?.usage ? { usage: localBase.usage } : {}),
+    preferences,
+    theme,
+    orchestratorSettings,
+    integration,
+    update,
+    remoteSession: { host, mode: 'connected', ...(transport ? { transport } : {}) },
+  };
+}
+
+export function buildRemoteFallbackMetrics({
+  localBase = null,
+  remoteHost,
+  reason = 'unconfigured',
+  preferences,
+  theme,
+  orchestratorSettings,
+  integration,
+  update,
+}) {
+  const host = sanitizeRemoteHost(remoteHost) || String(remoteHost || '');
+  return {
+    connection: localBase?.connection || 'live',
+    groups: Array.isArray(localBase?.groups) ? localBase.groups : [],
+    speed: null,
+    ...(localBase?.error ? { error: localBase.error } : {}),
+    ...(localBase?.usage ? { usage: localBase.usage } : {}),
+    preferences,
+    theme,
+    orchestratorSettings,
+    integration,
+    update,
+    remoteSession: {
+      host,
+      mode: 'fallback',
+      reason: reason === 'unreachable' ? 'unreachable' : 'unconfigured',
+    },
+  };
+}
+
+const STEP_TYPE_NAMES = {
+  4: 'CORTEX_STEP_TYPE_RUN_COMMAND',
+  14: 'CORTEX_STEP_TYPE_USER_INPUT',
+  15: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE',
+  30: 'CORTEX_STEP_TYPE_CHECKPOINT',
+  33: 'CORTEX_STEP_TYPE_CONTEXT_COMPACTION',
+};
+const STEP_STATUS_NAMES = {
+  1: 'CORTEX_STEP_STATUS_PENDING',
+  2: 'CORTEX_STEP_STATUS_RUNNING',
+  3: 'CORTEX_STEP_STATUS_DONE',
+  6: 'CORTEX_STEP_STATUS_CANCELED',
+  7: 'CORTEX_STEP_STATUS_ERROR',
+  8: 'CORTEX_STEP_STATUS_GENERATING',
+};
+const RUN_STATUS_NAMES = {
+  1: 'CASCADE_RUN_STATUS_IDLE',
+  2: 'CASCADE_RUN_STATUS_RUNNING',
+  3: 'CASCADE_RUN_STATUS_CANCELLED',
+};
+
+export function buildRendererTrajectoryProbe(cascadeId) {
+  const cid = typeof cascadeId === 'string' ? cascadeId.trim() : '';
+  if (!GUID_RE.test(cid)) throw new Error('Invalid conversation ID');
+  return `(async (cid) => {
+    const g = typeof globalThis !== 'undefined' ? globalThis : window;
+    const isLs = v => Boolean(v && typeof v === 'object' && typeof v.getUserStatus === 'function' && typeof v.getCascadeTrajectory === 'function');
+    const findLs = () => {
+      try {
+        const ref = g.__agPulseRemoteLsRef;
+        const cached = ref && (typeof ref.deref === 'function' ? ref.deref() : ref);
+        if (isLs(cached)) return cached;
+      } catch {}
+      const root = document.getElementById('root') || document.body;
+      if (!root) return null;
+      const fk = Object.keys(root).find(k => k.startsWith('__reactContainer$') || k.startsWith('__reactFiber$'));
+      if (!fk || !root[fk]) return null;
+      const q = [root[fk]], seen = new Set();
+      let visited = 0;
+      while (q.length && visited < 6000) {
+        const f = q.shift();
+        if (!f || seen.has(f)) continue;
+        seen.add(f);
+        visited++;
+        const v = f.memoizedProps && f.memoizedProps.value;
+        if (isLs(v)) {
+          try { g.__agPulseRemoteLsRef = typeof WeakRef === 'function' ? new WeakRef(v) : v; } catch {}
+          return v;
+        }
+        if (f.child) q.push(f.child);
+        if (f.sibling) q.push(f.sibling);
+      }
+      return null;
+    };
+    const ls = findLs();
+    if (!ls) return null;
+    let res;
+    try { res = await ls.getCascadeTrajectory({ cascadeId: cid }); } catch { return null; }
+    const traj = res && res.trajectory;
+    if (!traj || typeof traj !== 'object') return null;
+    const toIso = v => {
+      if (v === undefined || v === null || v === '') return undefined;
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' || typeof v === 'bigint') {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) return undefined;
+        const d = new Date(n > 1e11 ? n : n * 1000);
+        return Number.isFinite(d.getTime()) ? d.toISOString() : undefined;
+      }
+      if (typeof v === 'object' && v.seconds !== undefined) {
+        const ms = Number(v.seconds) * 1000 + Math.floor(Number(v.nanos ?? 0) / 1e6);
+        const d = new Date(ms);
+        return Number.isFinite(d.getTime()) ? d.toISOString() : undefined;
+      }
+      return undefined;
+    };
+    const toDur = v => {
+      if (v === undefined || v === null) return undefined;
+      if (typeof v === 'number' || typeof v === 'string') return v;
+      if (typeof v === 'bigint') return Number(v);
+      if (typeof v === 'object' && (v.seconds !== undefined || v.nanos !== undefined)) {
+        return { seconds: Number(v.seconds ?? 0), nanos: Number(v.nanos ?? 0) };
+      }
+      return undefined;
+    };
+    const toIntStr = v => (v === undefined || v === null ? undefined : String(v));
+    const mapUsage = u => u && typeof u === 'object' ? {
+      model: u.model !== undefined ? Number(u.model) : undefined,
+      inputTokens: toIntStr(u.inputTokens),
+      outputTokens: toIntStr(u.outputTokens),
+      thinkingOutputTokens: toIntStr(u.thinkingOutputTokens),
+      responseOutputTokens: toIntStr(u.responseOutputTokens),
+      cacheReadTokens: toIntStr(u.cacheReadTokens),
+      cacheWriteTokens: toIntStr(u.cacheWriteTokens),
+      apiProvider: u.apiProvider,
+      responseId: typeof u.responseId === 'string' && u.responseId ? u.responseId : undefined,
+      messageId: typeof u.messageId === 'string' && u.messageId ? u.messageId : undefined,
+    } : undefined;
+    const mapGroups = groups => Array.isArray(groups) ? groups.slice(0, 16).map(gr => ({
+      name: typeof gr?.name === 'string' ? gr.name.slice(0, 64) : '',
+      type: typeof gr?.type === 'string' ? gr.type.slice(0, 48) : '',
+      source: typeof gr?.source === 'string' ? gr.source.slice(0, 48) : '',
+      numTokens: Number(gr?.numTokens ?? gr?.tokens ?? 0),
+    })) : undefined;
+    const steps = Array.isArray(traj.steps) ? traj.steps.map(s => {
+      const m = s?.metadata || {};
+      const pr = s?.plannerResponse;
+      return {
+        type: s?.type,
+        status: s?.status,
+        metadata: {
+          createdAt: toIso(m.createdAt),
+          startedAt: toIso(m.startedAt),
+          completedAt: toIso(m.completedAt),
+          viewableAt: toIso(m.viewableAt),
+          finishedGeneratingAt: toIso(m.finishedGeneratingAt),
+          ...(m.toolCall?.name ? { toolCall: { name: String(m.toolCall.name).slice(0, 80) } } : {}),
+          ...(m.toolSource !== undefined ? { toolSource: String(m.toolSource) } : {}),
+          ...(m.modelUsage ? { modelUsage: mapUsage(m.modelUsage) } : {}),
+        },
+        ...(pr ? {
+          plannerResponse: {
+            ...(Array.isArray(pr.toolCalls) ? { toolCalls: pr.toolCalls.map(() => ({})) } : {}),
+            ...(typeof pr.response === 'string' && pr.response.trim() ? { response: '_' } : {}),
+          },
+        } : {}),
+      };
+    }) : [];
+    const generatorMetadata = Array.isArray(traj.generatorMetadata) ? traj.generatorMetadata.map(gm => {
+      const cm = gm?.metadata?.case === 'chatModel' ? gm.metadata.value : (gm?.chatModel || gm?.metadata?.value);
+      if (!cm || typeof cm !== 'object') return null;
+      const cwm = cm.chatStartMetadata?.contextWindowMetadata;
+      const custom = cm.customMetadata || {};
+      const modelId = (typeof custom.model_enum === 'string' && custom.model_enum)
+        || (typeof cm.responseModel === 'string' && cm.responseModel)
+        || (typeof cm.modelDisplayName === 'string' && cm.modelDisplayName)
+        || (cm.model !== undefined ? String(cm.model) : '');
+      const retryInfos = Array.isArray(cm.retryInfos)
+        ? cm.retryInfos.filter(r => r?.usage).map(r => ({ usage: mapUsage(r.usage) }))
+        : undefined;
+      return {
+        stepIndices: Array.isArray(gm.stepIndices) ? gm.stepIndices.map(Number).filter(Number.isInteger) : [],
+        chatModel: {
+          model: modelId,
+          responseModel: typeof cm.responseModel === 'string' ? cm.responseModel : undefined,
+          modelDisplayName: typeof cm.modelDisplayName === 'string' ? cm.modelDisplayName : undefined,
+          timeToFirstToken: toDur(cm.timeToFirstToken),
+          streamingDuration: toDur(cm.streamingDuration),
+          usage: mapUsage(cm.usage),
+          ...(retryInfos && retryInfos.length ? { retryInfos } : {}),
+          ...(cm.chatStartMetadata ? {
+            chatStartMetadata: {
+              createdAt: toIso(cm.chatStartMetadata.createdAt),
+              ...(cwm ? {
+                contextWindowMetadata: {
+                  estimatedTokensUsed: Number(cwm.estimatedTokensUsed ?? 0),
+                  maxContextTokens: Number(cwm.maxContextTokens ?? 0),
+                  ...(cwm.tokenBreakdown?.groups ? { tokenBreakdown: { groups: mapGroups(cwm.tokenBreakdown.groups) } } : {}),
+                },
+              } : {}),
+            },
+          } : {}),
+        },
+      };
+    }).filter(Boolean) : [];
+    return {
+      status: res.status,
+      numTotalSteps: Number(res.numTotalSteps ?? steps.length),
+      numTotalGeneratorMetadata: Number(res.numTotalGeneratorMetadata ?? generatorMetadata.length),
+      trajectory: {
+        cascadeId: cid.toLowerCase(),
+        steps,
+        generatorMetadata,
+      },
+    };
+  })(${JSON.stringify(cid)})`;
+}
+
+function normalizeProvider(rawProvider, meta = {}) {
+  if (typeof rawProvider === 'string' && /GOOGLE_GEMINI|OPENAI|ANTHROPIC/i.test(rawProvider)) return rawProvider;
+  const hint = `${meta.modelDisplayName || ''} ${meta.responseModel || ''} ${meta.model || ''}`.toLowerCase();
+  if (/\bclaude\b|anthropic|\bsonnet\b|\bopus\b|\bhaiku\b/.test(hint)) return 'API_PROVIDER_ANTHROPIC';
+  if (/\bgpt\b|openai|\bo[134]\b/.test(hint)) return 'API_PROVIDER_OPENAI';
+  if (/\bgemini\b|neon|carbon|argon|hydrogen|orchestrator/.test(hint) || Number(rawProvider) === 24) {
+    return 'API_PROVIDER_GOOGLE_GEMINI';
+  }
+  return typeof rawProvider === 'string' ? rawProvider : '';
+}
+
+export function normalizeRendererTrajectory(projected, cascadeId = null) {
+  if (!projected || typeof projected !== 'object' || !projected.trajectory) return null;
+  const traj = projected.trajectory;
+  const steps = Array.isArray(traj.steps) ? traj.steps.map(s => ({
+    ...s,
+    type: typeof s?.type === 'number' ? (STEP_TYPE_NAMES[s.type] || `CORTEX_STEP_TYPE_${s.type}`) : s?.type,
+    status: typeof s?.status === 'number' ? (STEP_STATUS_NAMES[s.status] || `CORTEX_STEP_STATUS_${s.status}`) : s?.status,
+  })) : [];
+  let hostUsage = null;
+  const generatorMetadata = Array.isArray(traj.generatorMetadata) ? traj.generatorMetadata.map(gm => {
+    const cm = gm?.chatModel;
+    if (!cm || typeof cm !== 'object') return gm;
+    const usage = cm.usage ? { ...cm.usage, apiProvider: normalizeProvider(cm.usage.apiProvider, cm) } : undefined;
+    const cwm = cm.chatStartMetadata?.contextWindowMetadata;
+    if (cwm && Array.isArray(cwm.tokenBreakdown?.groups) && cwm.tokenBreakdown.groups.length && cwm.maxContextTokens > 0) {
+      hostUsage = {
+        estimatedTokensUsed: cwm.estimatedTokensUsed,
+        maxContextTokens: cwm.maxContextTokens,
+        tokenGroups: cwm.tokenBreakdown.groups,
+      };
+    }
+    return {
+      ...gm,
+      chatModel: {
+        ...cm,
+        ...(usage ? { usage } : {}),
+      },
+    };
+  }) : [];
+  const rawStatus = projected.status;
+  const status = typeof rawStatus === 'number'
+    ? (RUN_STATUS_NAMES[rawStatus] || `CASCADE_RUN_STATUS_${rawStatus}`)
+    : (typeof rawStatus === 'string' ? rawStatus : null);
+  return {
+    status,
+    numTotalSteps: Number.isSafeInteger(projected.numTotalSteps) ? projected.numTotalSteps : steps.length,
+    numTotalGeneratorMetadata: Number.isSafeInteger(projected.numTotalGeneratorMetadata) ? projected.numTotalGeneratorMetadata : generatorMetadata.length,
+    trajectory: {
+      cascadeId: String(traj.cascadeId || cascadeId || '').toLowerCase(),
+      steps,
+      generatorMetadata,
+    },
+    ...(hostUsage ? { hostUsage } : {}),
+  };
+}
+
+export function startRemoteBridgeServer({ port, metrics, health = null, onError = null } = {}) {
+  const validPort = validateBridgePort(port);
+  if (!validPort) return null;
+  const server = createServer(async (req, res) => {
+    const host = req.headers.host || '';
+    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+    if (req.headers.origin && req.headers.origin !== `http://${host}`) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+    if (req.method !== 'GET') {
+      res.writeHead(405);
+      res.end();
+      return;
+    }
+    const url = new URL(req.url || '/', `http://${host}`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    if (url.pathname === '/api/health') {
+      const payload = typeof health === 'function' ? await health() : { ok: true, mode: 'remote-bridge', port: validPort };
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(payload));
+      return;
+    }
+    if (url.pathname === '/api/metrics' && typeof metrics === 'function') {
+      try {
+        const scopeParam = url.searchParams.get('usageScope');
+        const rawCid = url.searchParams.get('conversationId');
+        const conversationId = typeof rawCid === 'string' && GUID_RE.test(rawCid) ? rawCid : null;
+        const payload = await metrics({
+          conversationId,
+          selectLatest: false,
+          force: url.searchParams.get('force') === '1',
+          quotaRefresh: url.searchParams.get('quotaRefresh') === '1',
+          ...(url.searchParams.get('contextDetail') === '1' ? { contextDetail: true } : {}),
+          ...(url.searchParams.get('usageSync') === '1' ? { usageSync: true } : {}),
+          ...(url.searchParams.get('usageOnly') === '1' ? { usageOnly: true } : {}),
+          ...(scopeParam === 'local' || scopeParam === 'account' ? { usageScope: scopeParam } : {}),
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(payload));
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end('{"error":"Remote metrics temporarily unavailable"}');
+      }
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  server.on('error', err => {
+    if (typeof onError === 'function') onError(err);
+  });
+  server.listen(validPort, '127.0.0.1');
+  server.unref?.();
+  return server;
+}

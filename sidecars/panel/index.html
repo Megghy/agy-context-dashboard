@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Antigrative Dashboard</title>
+  <title>Antigravity Dashboard</title>
   <link rel="stylesheet" href="/theme.css?v=sidebar-layout-3">
   <link rel="stylesheet" href="/styles.css?v=sidebar-layout-3">
   <script src="/preload.js"></script>
@@ -19,9 +19,9 @@
     <symbol id="pulse" viewBox="0 0 16 16"><path d="M1 8h4l2-5 3 10 2-5h3"/></symbol>
     <symbol id="cat" viewBox="0 0 16 16"><path d="M3 13.5V5.5l2-3.5 2.4 2.6h1.2L11 2l2 3.5v8z"/><path d="M6.2 8.6v.6M9.8 8.6v.6M7.3 11h1.4"/></symbol>
   </svg>
-  <main class="widget" data-i18n-aria="strip" aria-label="Antigrative Dashboard statistics">
+  <main class="widget" data-i18n-aria="strip" aria-label="Antigravity Dashboard statistics">
     <header class="widget-header">
-      <div class="brand"><svg class="icon"><use href="#pulse"/></svg><span id="panel-name">Antigrative Dashboard</span><span class="connection-dot" id="connection-dot"></span><span class="version-tag" id="panel-version" hidden></span></div>
+      <div class="brand"><svg class="icon"><use href="#pulse"/></svg><span id="panel-name">Antigravity Dashboard</span><span class="connection-dot" id="connection-dot"></span><span class="version-tag" id="panel-version" hidden></span></div>
       <div class="header-controls">
         <label class="sr-only" for="quota-group"><span data-i18n="group">Quota group</span></label>
         <button class="icon-button" id="host-i18n-toggle" type="button" data-host-i18n-toggle="true" aria-pressed="false" aria-label="Host UI Chinese" title="Enable Host UI Chinese">汉</button><button class="icon-button" id="language-toggle" type="button" data-i18n-aria="language" aria-label="Language" title="Switch to Chinese">EN</button><select id="quota-group" data-i18n-aria="group" aria-label="Quota group"><option value=""><span data-i18n="loadingQuota">Loading quota…</span></option></select>
@@ -30,13 +30,14 @@
     </header>
     <div class="panel-subbar">
       <div class="panel-view-switch" role="tablist" data-i18n-aria="panelViewSwitch" aria-label="Panel view">
-        <button class="panel-view-tab" id="view-activity-tab" type="button" role="tab" data-panel-view="activity" aria-selected="false" tabindex="-1" data-i18n="panelViewActivity">Daily/Weekly</button>
-        <button class="panel-view-tab" id="view-models-tab" type="button" role="tab" data-panel-view="models" aria-selected="false" tabindex="-1" data-i18n="panelViewModels">By model</button>
         <button class="panel-view-tab" id="view-session-tab" type="button" role="tab" data-panel-view="session" aria-selected="true" tabindex="0" data-i18n="panelViewSession">Session</button>
         <button class="panel-view-tab" id="view-insights-tab" type="button" role="tab" data-panel-view="insights" aria-selected="false" tabindex="-1" data-i18n="panelViewInsights">Insights</button>
+        <button class="panel-view-tab" id="view-activity-tab" type="button" role="tab" data-panel-view="activity" aria-selected="false" tabindex="-1" data-i18n="panelViewActivity">Daily/Weekly</button>
+        <button class="panel-view-tab" id="view-models-tab" type="button" role="tab" data-panel-view="models" aria-selected="false" tabindex="-1" data-i18n="panelViewModels">By model</button>
       </div>
       <div class="sampled-model">
         <span class="sr-only" data-i18n="contextModel">Sampled model</span>
+        <button class="route-pill" id="strip-route-pill" type="button" hidden></button>
         <span id="strip-model">—</span>
         <button class="mini-pill-btn" id="strip-session-reset" type="button" data-i18n-aria="panelResetSession" hidden>×</button>
         <span class="credits-badge" id="account-credits-badge" hidden></span>
@@ -48,8 +49,12 @@
         <span class="chip-primary"><strong id="strip-tps">—</strong><span class="unit">tok/s</span></span><span class="chip-secondary" id="session-steps">—</span>
       </button>
       <button class="metric-chip" id="cache-tab" type="button" role="tab" data-card="cache" aria-controls="cache-card" aria-selected="false" tabindex="-1">
-        <span class="metric-label"><svg class="icon"><use href="#cache"/></svg><span data-i18n="panelCache">Cache</span></span>
-        <span class="chip-primary"><strong id="strip-cache">—</strong></span><span class="chip-secondary" id="strip-cache-total">— tok</span>
+        <span class="metric-label"><svg class="icon"><use href="#cache"/></svg><span data-i18n="panelCache">Token · Cache</span></span>
+        <span class="chip-primary"><strong id="strip-cache-total"><span id="strip-cache-total-num">—</span><span class="unit"> tok</span></strong></span><span class="chip-secondary"><span data-i18n="cache">Cache hit</span> <span id="strip-cache">—</span></span>
+      </button>
+      <button class="metric-chip" id="quota-tab" type="button" role="tab" data-card="quota" aria-controls="quota-card" aria-selected="false" tabindex="-1">
+        <span class="metric-label"><svg class="icon"><use href="#clock"/></svg><span data-i18n="panelQuota">Quota</span></span>
+        <span class="chip-primary"><strong id="strip-quota">—</strong><span class="unit" id="strip-quota-unit">5h</span></span><span class="chip-secondary" id="strip-quota-sub">—</span>
       </button>
       <button class="metric-chip" id="context-tab" type="button" role="tab" data-card="context" aria-controls="context-card" aria-selected="false" tabindex="-1">
         <span class="metric-label"><svg class="icon"><use href="#gauge"/></svg><span data-i18n="panelContext">Context</span></span>
@@ -61,7 +66,10 @@
         <div class="hero-row" id="speed-hero-row">
           <div class="hero-main" id="speed-hero-main">
             <div class="hero-label"><svg class="icon"><use id="speed-hero-icon" href="#gauge"/></svg><span data-i18n="latestSpeed">Latest decode</span></div>
-            <div class="hero-value"><strong id="latest-tps">—</strong><span class="hero-unit" id="panel-latest-unit">tok/s</span></div>
+            <div class="hero-rate-wrap">
+              <div class="hero-value"><strong id="latest-tps">—</strong><span class="hero-unit" id="panel-latest-unit">tok/s</span></div>
+              <div class="hero-sub" id="latest-sub" hidden></div>
+            </div>
           </div>
           <svg class="panel-speed-trail" id="panel-speed-trail" viewBox="0 0 120 44" aria-hidden="true"></svg>
           <div class="style-toggle" role="group" data-i18n-aria="speedStyle" aria-label="Speed card style"><button class="style-toggle-button" type="button" id="speed-style-minimal" data-speed-style-choice="minimal"><svg class="icon"><use href="#pulse"/></svg></button><button class="style-toggle-button" type="button" id="speed-style-cat" data-speed-style-choice="cat"><svg class="icon"><use href="#cat"/></svg></button></div>
@@ -80,12 +88,13 @@
       <article class="detail-card" id="cache-card" role="tabpanel" tabindex="0" aria-labelledby="cache-tab" hidden>
         <div class="hero-row cache-hero">
           <div class="hero-main">
-            <div class="hero-label"><svg class="icon"><use href="#cache"/></svg><span data-i18n="cacheTitle">Token usage</span></div>
+            <div class="hero-label"><svg class="icon"><use href="#cache"/></svg><span data-i18n="panelCache">Token · Cache</span></div>
             <div class="hero-value"><strong id="cache-coverage">—</strong><span class="hero-unit" id="cache-coverage-unit">toks</span><span class="rate-pill"><span class="rate-pill-label" data-i18n="cacheHitRateColon">Cache hit rate:</span><span id="cache-rate">—</span></span></div>
           </div>
         </div>
         <div class="cache-meter" aria-hidden="true"><i id="cache-seg-read"></i><i id="cache-seg-miss"></i><i id="cache-seg-out"></i></div>
         <dl class="stats-grid cache-stats"><div id="cache-read-cell"><dt data-i18n="cacheRead">Cache read</dt><dd><strong id="cache-read">—</strong><span class="stat-unit" id="cache-read-unit" hidden> toks</span></dd></div><div id="cache-miss-cell"><dt data-i18n="cacheMiss">Uncached input</dt><dd><strong id="cache-miss">—</strong><span class="stat-unit" id="cache-miss-unit" hidden> toks</span></dd></div><div id="cache-output-cell"><dt data-i18n="cacheOutput">Output</dt><dd><strong id="cache-output">—</strong><span class="stat-unit" id="cache-output-unit" hidden> toks</span></dd></div><div class="span-row" id="cache-write-row" hidden><dt data-i18n="cacheWrite">Cache write</dt><dd id="cache-write">—</dd></div><div class="span-row" id="session-cost-row" hidden><dt data-i18n="estimatedCostLabel">Estimated cost</dt><dd id="session-cost-value">—</dd></div><div class="span-row" id="task-own-row" hidden><dt data-i18n="taskOwn">Current agent</dt><dd id="task-own">—</dd></div><div class="span-row" id="task-subagents-row" hidden><dt id="task-subagents-label"></dt><dd id="task-subagents">—</dd></div></dl><p class="card-footnote" id="cache-note" hidden></p>
+        <details class="breakdown-details" id="orchestrator-breakdown" hidden><summary><span id="orch-phase-label"></span><strong class="breakdown-meta" id="orch-phase-meta"></strong></summary><div class="breakdown-body" id="orch-phase-body"></div></details>
         <details class="breakdown-details" id="orchestration-breakdown" hidden><summary><span id="orch-summary-label"></span><strong class="breakdown-meta" id="orch-summary-meta"></strong></summary><div class="breakdown-body" id="orch-body"></div></details>
         <div class="panel-usage-entry" id="panel-usage-entry" hidden>
           <div class="panel-usage-summary">
@@ -97,6 +106,24 @@
             <button type="button" class="mini-pill-btn" id="open-panel-models" data-i18n="usageViewModels">By model</button>
           </div>
         </div>
+      </article>
+      <article class="detail-card" id="quota-card" role="tabpanel" tabindex="0" aria-labelledby="quota-tab" hidden>
+        <div class="quota-spotlight-head" id="panel-active-group"><i class="spot-dot" aria-hidden="true"></i><strong class="spot-name" id="panel-group-name">—</strong><span class="pace-badge" id="panel-quota-pace" hidden><i class="pace-dot" aria-hidden="true"></i><span id="panel-quota-pace-text"></span></span></div>
+        <div class="quota-details">
+      <section class="quota-section" id="five-details" role="region" data-i18n-aria="five" aria-label="Five-hour quota">
+        <div class="quota-line"><span class="quota-name"><svg class="icon"><use href="#clock"/></svg><span data-i18n="five">Five-hour quota</span></span><span class="quota-meta"><span class="reset-countdown" id="five-countdown">—</span></span><strong class="quota-balance" id="five-balance">—</strong></div>
+        <div class="quota-track" role="progressbar" data-i18n-aria="five" aria-label="Five-hour quota remaining" id="five-track"><i class="track-actual" id="five-fill"></i></div>
+        <div class="quota-forecast" id="five-forecast" hidden><span class="forecast-main" id="five-forecast-text"></span><span class="usage-hint" id="five-usage" hidden></span></div>
+        <p class="card-footnote quota-note" id="five-note" hidden></p>
+      </section>
+      <section class="quota-section" id="week-details" role="region" data-i18n-aria="week" aria-label="Weekly quota">
+        <div class="quota-line"><span class="quota-name"><svg class="icon"><use href="#calendar"/></svg><span id="week-quota-title" data-i18n="week">Weekly quota</span></span><span class="quota-meta"><span class="reset-countdown" id="week-countdown">—</span></span><strong class="quota-balance" id="week-balance">—</strong></div>
+        <div class="quota-track" role="progressbar" data-i18n-aria="week" aria-label="Weekly quota remaining" id="week-track"><i class="track-actual" id="week-fill"></i></div>
+        <div class="quota-forecast" id="week-forecast" hidden><span class="forecast-main" id="week-forecast-text"></span><span class="usage-hint" id="week-usage" hidden></span></div>
+        <p class="card-footnote quota-note" id="week-note" hidden></p>
+      </section>
+        </div>
+        <div class="quota-siblings" id="panel-quota-siblings" hidden></div>
       </article>
       <article class="detail-card" id="context-card" role="tabpanel" tabindex="0" aria-labelledby="context-tab" hidden>
         <div class="card-heading"><span><svg class="icon"><use href="#gauge"/></svg><span data-i18n="context">Context window</span></span><span class="context-heading-right"><button class="mini-pill-btn" id="context-audit-toggle" type="button" aria-expanded="false" data-i18n="auditButton" hidden>Audit</button><span class="card-tag" id="context-model">—</span></span></div>
@@ -120,7 +147,7 @@
           <div class="composition-legend" id="panel-composition-legend"></div>
           <div class="token-base-drilldown" id="panel-token-base-drilldown" hidden>
             <button class="drilldown-toggle" id="token-base-toggle" type="button" aria-expanded="false">
-              <span id="token-base-toggle-label">Customization drilldown</span>
+              <span class="drilldown-toggle-left"><svg class="drilldown-chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3"/></svg><span id="token-base-toggle-label">Rules &amp; skills config</span></span>
               <span class="drilldown-summary" id="token-base-toggle-summary"></span>
             </button>
             <div class="drilldown-body" id="token-base-tree" hidden></div>
@@ -140,6 +167,7 @@
           <svg id="panel-trend-svg" viewBox="0 0 280 42" preserveAspectRatio="none" aria-hidden="true"></svg>
           <div class="trend-markers-list" id="panel-trend-markers" hidden></div>
         </section>
+        <details class="breakdown-details" id="context-breakdown" hidden><summary><span id="ctx-breakdown-label"></span><strong class="breakdown-meta" id="ctx-breakdown-meta"></strong></summary><div class="breakdown-body" id="ctx-breakdown-body"></div></details>
         <section class="audit-section" id="panel-audit-section" hidden>
           <div class="audit-head">
             <div class="audit-tabs" role="tablist" data-i18n-aria="auditTitle">
@@ -163,28 +191,6 @@
             <div class="audit-steps-list" id="audit-steps-list"></div>
           </div>
         </section>
-        <div class="quota-spotlight-head" id="panel-active-group"><i class="spot-dot" aria-hidden="true"></i><strong class="spot-name" id="panel-group-name">—</strong><span class="pace-badge" id="panel-quota-pace" hidden><i class="pace-dot" aria-hidden="true"></i><span id="panel-quota-pace-text"></span></span></div>
-        <div class="quota-details">
-      <section class="quota-section" id="five-details" role="region" data-i18n-aria="five" aria-label="Five-hour quota">
-        <div class="quota-line"><span class="quota-name"><svg class="icon"><use href="#clock"/></svg><span data-i18n="five">Five-hour quota</span></span><span class="quota-meta"><span class="reset-countdown" id="five-countdown">—</span></span><strong class="quota-balance" id="five-balance">—</strong></div>
-        <div class="quota-track" role="progressbar" data-i18n-aria="five" aria-label="Five-hour quota remaining" id="five-track"><i class="track-actual" id="five-fill"></i></div>
-        <div class="quota-forecast" id="five-forecast" hidden><span class="forecast-main" id="five-forecast-text"></span><span class="usage-hint" id="five-usage" hidden></span></div>
-        <p class="card-footnote quota-note" id="five-note" hidden></p>
-      </section>
-      <section class="quota-section" id="week-details" role="region" data-i18n-aria="week" aria-label="Weekly quota">
-        <div class="quota-line"><span class="quota-name"><svg class="icon"><use href="#calendar"/></svg><span id="week-quota-title" data-i18n="week">Weekly quota</span></span><span class="quota-meta"><span class="reset-countdown" id="week-countdown">—</span></span><strong class="quota-balance" id="week-balance">—</strong></div>
-        <div class="quota-track" role="progressbar" data-i18n-aria="week" aria-label="Weekly quota remaining" id="week-track"><i class="track-actual" id="week-fill"></i></div>
-        <div class="quota-forecast" id="week-forecast" hidden><span class="forecast-main" id="week-forecast-text"></span><span class="usage-hint" id="week-usage" hidden></span></div>
-        <p class="card-footnote quota-note" id="week-note" hidden></p>
-      </section>
-        </div>
-        <details class="breakdown-details" id="context-breakdown" hidden><summary><span id="ctx-breakdown-label"></span><strong class="breakdown-meta" id="ctx-breakdown-meta"></strong></summary><div class="breakdown-body" id="ctx-breakdown-body"></div></details>
-        <div class="quota-siblings" id="panel-quota-siblings" hidden></div>
-        <div class="card-toggle" id="host-i18n-row">
-          <span class="card-toggle-label" id="host-i18n-label" data-i18n="hostUiLocalization">Host UI Chinese</span>
-          <div class="segmented-options" role="group" data-i18n-aria="hostUiLocalization" aria-label="Host UI Chinese"><button type="button" class="segmented-button" id="host-i18n-off" data-host-i18n-choice="false" data-i18n="hostUiLocalizationOff" aria-pressed="true">Off</button><button type="button" class="segmented-button" id="host-i18n-on" data-host-i18n-choice="true" data-i18n="hostUiLocalizationOn" aria-pressed="false">On</button></div>
-        </div>
-        <p class="card-footnote toggle-note" id="host-i18n-save-note" hidden></p>
       </article>
     </section>
     <section class="usage-panel-view" id="usage-panel-view" role="tabpanel" aria-labelledby="view-activity-tab" hidden></section>
@@ -219,7 +225,24 @@
             <button class="mini-seg-btn" id="heatmap-metric-tokens" type="button" aria-pressed="false" data-i18n="insightsHeatmapTokens">Tokens</button>
           </span>
         </div>
-        <div class="insights-heatmap-grid" id="insights-heatmap-grid"></div>
+        <div class="insights-heatmap-meta" id="insights-heatmap-meta"></div>
+        <div class="insights-heatmap-board">
+          <div class="insights-heatmap-months" id="insights-heatmap-months" aria-hidden="true"></div>
+          <div class="insights-heatmap-weekdays" id="insights-heatmap-weekdays" aria-hidden="true"></div>
+          <div class="insights-heatmap-grid" id="insights-heatmap-grid"></div>
+        </div>
+        <div class="insights-heatmap-foot">
+          <span class="insights-heatmap-range" id="insights-heatmap-range"></span>
+          <div class="insights-heatmap-scale" id="insights-heatmap-scale" aria-hidden="true">
+            <span data-i18n="insightsHeatmapLess">Less</span>
+            <i class="heatmap-swatch"></i>
+            <i class="heatmap-swatch" data-level="1"></i>
+            <i class="heatmap-swatch" data-level="2"></i>
+            <i class="heatmap-swatch" data-level="3"></i>
+            <i class="heatmap-swatch" data-level="4"></i>
+            <span data-i18n="insightsHeatmapMore">More</span>
+          </div>
+        </div>
       </div>
       <div class="insights-panel" id="insights-comp-section">
         <div class="insights-panel-head"><span data-i18n="insightsCompTitle">Token composition</span><span class="tag" id="insights-comp-meta"></span></div>
@@ -227,16 +250,17 @@
         <div class="composition-legend" id="insights-comp-legend"></div>
       </div>
       <div class="insights-dist-grid">
-        <div class="insights-dist-card"><div class="insights-dist-title" data-i18n="insightsProjects">Projects</div><div class="insights-dist-list" id="insights-dist-projects"></div></div>
-        <div class="insights-dist-card"><div class="insights-dist-title" data-i18n="insightsSkills">Skills loaded</div><div class="insights-dist-list" id="insights-dist-skills"></div></div>
-        <div class="insights-dist-card"><div class="insights-dist-title" data-i18n="insightsTools">Tools invoked</div><div class="insights-dist-list" id="insights-dist-tools"></div></div>
-        <div class="insights-dist-card"><div class="insights-dist-title" data-i18n="insightsCommands">Commands run</div><div class="insights-dist-list" id="insights-dist-commands"></div></div>
+        <div class="insights-dist-card"><div class="insights-dist-head"><span class="insights-dist-title" data-i18n="insightsProjects">Projects</span><span class="insights-dist-sub" id="insights-dist-projects-sub"></span></div><div class="insights-dist-list" id="insights-dist-projects"></div></div>
+        <div class="insights-dist-card"><div class="insights-dist-head"><span class="insights-dist-title" data-i18n="insightsSkills">Skills loaded</span><span class="insights-dist-sub" id="insights-dist-skills-sub"></span></div><div class="insights-dist-list" id="insights-dist-skills"></div></div>
+        <div class="insights-dist-card"><div class="insights-dist-head"><span class="insights-dist-title" data-i18n="insightsTools">Tools invoked</span><span class="insights-dist-sub" id="insights-dist-tools-sub"></span></div><div class="insights-dist-list" id="insights-dist-tools"></div></div>
+        <div class="insights-dist-card"><div class="insights-dist-head"><span class="insights-dist-title" data-i18n="insightsCommands">Commands run</span><span class="insights-dist-sub" id="insights-dist-commands-sub"></span></div><div class="insights-dist-list" id="insights-dist-commands"></div></div>
       </div>
       <div class="insights-panel">
-        <div class="insights-panel-head"><span id="insights-sessions-title">Sessions</span><span class="tag" id="insights-cache-meta"></span></div>
+        <div class="insights-panel-head"><span class="insights-sessions-head-left"><span id="insights-sessions-title">Sessions</span><button class="insights-date-filter" id="insights-date-filter" type="button" hidden></button></span><span class="tag" id="insights-cache-meta"></span></div>
         <div class="insights-sessions-list" id="insights-sessions-list"></div>
       </div>
     </section>
+    <div class="heatmap-tip" id="insights-heatmap-tip" role="status" hidden></div>
     <div class="health-note" id="health-note" role="status">Waiting for the first update</div>
     <div class="health-note" id="integration-note" role="status"></div>
   </main>

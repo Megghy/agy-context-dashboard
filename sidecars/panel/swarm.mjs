@@ -63,7 +63,8 @@ export async function readSwarmMembers(brainRoot,conversationId,{maxBytes=512*10
   const workspaceMode=['inherit','share','branch'].includes(member.workspace_mode)?member.workspace_mode:null;
   byId.set(cid,{id:cid,name:cleanName,role,model,workspaceMode,killed:member.killed===true});
  }
- return byId.size?{swarmId,byId,ids:[...byId.keys()]}:null;
+ const title=cleanAgentLabel(raw.title||'',48)||null;
+ return byId.size?{swarmId,title,byId,ids:[...byId.keys()]}:null;
 }
 
 export function agentDescriptor(conversationId,{isRoot=false,isSubagent=false,selfMember=null,summaries={},swarmMembers=null}={}){

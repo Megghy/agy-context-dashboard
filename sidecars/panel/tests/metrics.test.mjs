@@ -161,3 +161,58 @@ test('smallCount leaves 4-digit integers ungrouped while grouping 10,000+', () =
   assert.equal(smallCount(12345), '12,345');
   assert.equal(smallCount(null), '—');
 });
+
+test('trajectoryMetrics aggregates completed assistant turns including non-user-input wakeups', () => {
+  const data = trajectoryMetrics({
+    status: 'CASCADE_RUN_STATUS_IDLE',
+    trajectory: {
+      cascadeId: '11111111-1111-1111-1111-111111111111',
+      steps: [
+        { type: 'CORTEX_STEP_TYPE_USER_INPUT' },
+        { type: 'CORTEX_STEP_TYPE_RUN_COMMAND' },
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'First reply' } },
+        { type: 'CORTEX_STEP_TYPE_SYSTEM_MESSAGE' },
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Second reply' } },
+      ],
+      generatorMetadata: [
+        { stepIndices: [1], chatModel: { modelDisplayName: 'Gemini 4 Neon (High)', streamingDuration: '1s', usage: { messageId: 'm1', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI', inputTokens: '1000', cacheReadTokens: '9000', outputTokens: '200' } } },
+        { stepIndices: [2], chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (Medium)', streamingDuration: '1s', usage: { messageId: 'm2', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI', inputTokens: '500', cacheReadTokens: '9500', outputTokens: '300' } } },
+        { stepIndices: [4], chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (Medium)', streamingDuration: '2s', usage: { messageId: 'm3', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI', inputTokens: '1000', cacheReadTokens: '19000', outputTokens: '400' } } },
+      ],
+    },
+  });
+  assert.equal(data.totalCompletedTurns, 2);
+  assert.equal(data.turns.length, 2);
+  assert.equal(data.turns[0].model, 'Gemini 4 Hydrogen (Medium)');
+  assert.equal(data.turns[0].multiModel, true);
+  assert.equal(data.turns[0].inputTokens, 20000);
+  assert.equal(data.turns[0].cachedTokens, 18500);
+  assert.equal(data.turns[0].outputTokens, 500);
+  assert.equal(data.turns[0].tps, 250);
+  assert.equal(data.turns[1].model, 'Gemini 4 Hydrogen (Medium)');
+  assert.equal(data.turns[1].multiModel, false);
+  assert.equal(data.turns[1].inputTokens, 20000);
+  assert.equal(data.turns[1].outputTokens, 400);
+  assert.equal(data.turns[1].tps, 200);
+});
+
+test('trajectoryMetrics excludes short-window (<1s) bursts from turn.tps while keeping token totals', () => {
+  const data = trajectoryMetrics({
+    status: 'CASCADE_RUN_STATUS_IDLE',
+    trajectory: {
+      cascadeId: '11111111-1111-1111-1111-111111111111',
+      steps: [
+        { type: 'CORTEX_STEP_TYPE_USER_INPUT' },
+        { type: 'CORTEX_STEP_TYPE_RUN_COMMAND' },
+        { type: 'CORTEX_STEP_TYPE_PLANNER_RESPONSE', status: 'CORTEX_STEP_STATUS_DONE', plannerResponse: { response: 'Done' } },
+      ],
+      generatorMetadata: [
+        { stepIndices: [1], chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (Medium)', streamingDuration: '0.2s', usage: { messageId: 'b1', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI', inputTokens: '1000', cacheReadTokens: '9000', outputTokens: '200' } } },
+        { stepIndices: [2], chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (Medium)', streamingDuration: '2s', usage: { messageId: 'b2', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI', inputTokens: '1000', cacheReadTokens: '9000', outputTokens: '400' } } },
+      ],
+    },
+  });
+  assert.equal(data.turns.length, 1);
+  assert.equal(data.turns[0].outputTokens, 600);
+  assert.equal(data.turns[0].tps, 200);
+});

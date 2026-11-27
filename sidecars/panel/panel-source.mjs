@@ -38,7 +38,7 @@ export function panelPageSource({readManifest=()=>readFileSync(join(HERE,'../../
  if(release){
   // The title keeps the version discoverable when the narrow layout hides its
   // badge. Insert before hashing so even a manifest-only update busts caches.
-  html=html.replace('<span id="panel-name">',`<span id="panel-name" title="Antigrative Dashboard v${release}">`)
+  html=html.replace('<span id="panel-name">',`<span id="panel-name" title="Antigravity Dashboard v${release}">`)
    .replace('<span class="version-tag" id="panel-version" hidden></span>',`<span class="version-tag" id="panel-version" title="v${release}">v${release}</span>`);
  }
  const version=createHash('sha256').update(html).update(panelAppSource()).update(readFileSync(join(HERE,'styles.css'))).update(readFileSync(join(HERE,'../../compat/theme.cjs'))).update(readFileSync(join(HERE,'../../compat/usage-ui.cjs'))).update(readFileSync(join(HERE,'../../compat/context-limit.cjs'))).digest('hex').slice(0,16);

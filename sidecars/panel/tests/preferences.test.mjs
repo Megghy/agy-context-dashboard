@@ -171,3 +171,58 @@ test('autoRelaunchDebug is omitted when unset, validates booleans, and persists 
   await writeFile(file,JSON.stringify({schema:1,language:'en',autoRelaunchDebug:'yes',revision:5}));
   assert.equal(Object.hasOwn(await store.get(),'autoRelaunchDebug'),false);
 });
+
+test('stripMode persists independently, defaults to full and validates choices',async t=>{
+  const {file,store}=await fixture(t);
+  const language=create(null);assert.equal(language.normalizeStripMode(undefined),'full');assert.equal(language.normalizeStripMode('minimal'),'minimal');assert.equal(language.normalizeStripMode('bad'),'full');
+  await store.set({stripMode:'minimal'});
+  let saved=await new PreferencesStore({file}).get();assert.equal(saved.stripMode,'minimal');assert.equal(saved.language,null);
+  await store.set({language:'zh-CN'});await store.set({stripMode:'full'});
+  saved=await new PreferencesStore({file}).get();assert.equal(saved.stripMode,'full');assert.equal(saved.language,'zh-CN');
+  for(const bad of [{stripMode:'compact'},{stripMode:null},{stripMode:''},{stripMode:'minimal',extra:'x'}])await assert.rejects(store.set(bad));
+  let revision=1,fail=false;
+  const ctrl=language.connectStripMode({initial:'minimal',write:async input=>{if(fail)throw Error('io');return {language:null,stripMode:input.stripMode,revision:++revision};}});
+  assert.equal(ctrl.mode,'minimal');
+  await ctrl.choose('full');assert.equal(ctrl.mode,'full');assert.equal(ctrl.error,false);
+  ctrl.sync({language:null,stripMode:'minimal',revision:1});assert.equal(ctrl.mode,'full');
+  fail=true;await ctrl.choose('minimal');assert.equal(ctrl.mode,'minimal');assert.equal(ctrl.error,true);
+  ctrl.dispose();
+});
+
+test('barPlacement persists independently, defaults to inline and validates choices',async t=>{
+  const {file,store}=await fixture(t);
+  const language=create(null);assert.equal(language.normalizeBarPlacement(undefined),'inline');assert.equal(language.normalizeBarPlacement('footer'),'footer');assert.equal(language.normalizeBarPlacement('top'),'inline');
+  const initial=await store.get();
+  assert.equal(Object.hasOwn(initial,'barPlacement'),false);
+  await store.set({barPlacement:'footer'});
+  let saved=await new PreferencesStore({file}).get();assert.equal(saved.barPlacement,'footer');assert.equal(saved.language,null);
+  await store.set({language:'zh-CN'});await store.set({barPlacement:'inline'});
+  saved=await new PreferencesStore({file}).get();assert.equal(saved.barPlacement,'inline');assert.equal(saved.language,'zh-CN');
+  for(const bad of [{barPlacement:'top'},{barPlacement:null},{barPlacement:''},{barPlacement:'footer',extra:'x'}])await assert.rejects(store.set(bad));
+  let revision=1,fail=false;
+  const ctrl=language.connectBarPlacement({initial:'footer',write:async input=>{if(fail)throw Error('io');return {language:null,barPlacement:input.barPlacement,revision:++revision};}});
+  assert.equal(ctrl.placement,'footer');
+  await ctrl.choose('inline');assert.equal(ctrl.placement,'inline');assert.equal(ctrl.error,false);
+  ctrl.sync({language:null,barPlacement:'footer',revision:1});assert.equal(ctrl.placement,'inline');
+  fail=true;await ctrl.choose('footer');assert.equal(ctrl.placement,'footer');assert.equal(ctrl.error,true);
+  ctrl.dispose();
+});
+
+test('turnFooter is omitted when unset, defaults to true and validates booleans',async t=>{
+  const {file,store}=await fixture(t);
+  const language=create(null);assert.equal(language.normalizeTurnFooter(undefined),true);assert.equal(language.normalizeTurnFooter(false),false);assert.equal(language.normalizeTurnFooter('no'),true);
+  const initial=await store.get();
+  assert.equal(Object.hasOwn(initial,'turnFooter'),false);
+  await store.set({turnFooter:false});
+  let saved=await new PreferencesStore({file}).get();assert.equal(saved.turnFooter,false);assert.equal(saved.language,null);
+  await store.set({language:'zh-CN'});await store.set({turnFooter:true});
+  saved=await new PreferencesStore({file}).get();assert.equal(saved.turnFooter,true);assert.equal(saved.language,'zh-CN');
+  for(const bad of [{turnFooter:'false'},{turnFooter:0},{turnFooter:null},{turnFooter:false,extra:'x'}])await assert.rejects(store.set(bad));
+  let revision=1,fail=false;
+  const ctrl=language.connectTurnFooter({initial:false,write:async input=>{if(fail)throw Error('io');return {language:null,turnFooter:input.turnFooter,revision:++revision};}});
+  assert.equal(ctrl.enabled,false);
+  await ctrl.choose(true);assert.equal(ctrl.enabled,true);assert.equal(ctrl.error,false);
+  ctrl.sync({language:null,turnFooter:false,revision:1});assert.equal(ctrl.enabled,true);
+  fail=true;await ctrl.choose(false);assert.equal(ctrl.enabled,false);assert.equal(ctrl.error,true);
+  ctrl.dispose();
+});

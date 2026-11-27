@@ -36,7 +36,7 @@ const EDGE_EXE = findEdge();
 
 async function launchBrowser(userDataDir, initialUrl) {
   const child = spawn(EDGE_EXE, [
-    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--window-size=1280,900',
     '--remote-debugging-port=0', `--user-data-dir=${userDataDir}`, initialUrl,
   ], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
   child.unref();
@@ -180,7 +180,12 @@ test('font sync, scope switching and quota window reference render end-to-end in
     groups: [{ id: 'gemini', name: 'Gemini', windows: { '5h': { available: true, remaining: 0.874, resetAt: reset5h }, weekly: { available: true, remaining: 0.399, resetAt: resetWk } } }],
     usage: usageData(overrideScope),
     ...(integrationState ? { integration: integrationState } : {}),
-    speed: trajectoryMetrics({ trajectory: { cascadeId: id, steps: [{ type: 'USER_INPUT' }], generatorMetadata: [{ chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (XHigh)', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 100000, maxContextTokens: 512000 } }, usage: billionSpeed ? { messageId: 'm2', inputTokens: '80000000', cacheReadTokens: '1150000000', outputTokens: '4567890', responseOutputTokens: '4000000', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' } : { messageId: 'm1', inputTokens: '5384106', cacheReadTokens: '55937971', outputTokens: '473719', responseOutputTokens: '400000', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' }, streamingDuration: '2s' } }] } }),
+    speed: trajectoryMetrics({ trajectory: { cascadeId: id, steps: [{ type: 'USER_INPUT' }], generatorMetadata: billionSpeed
+      ? [{ chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (XHigh)', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 100000, maxContextTokens: 512000 } }, usage: { messageId: 'm2', inputTokens: '80000000', cacheReadTokens: '1150000000', outputTokens: '4567890', responseOutputTokens: '4000000', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' }, streamingDuration: '2s' } }]
+      : [
+          { chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (XHigh)', usage: { messageId: 'm1-prev', inputTokens: '5374106', cacheReadTokens: '55857971', outputTokens: '463719', responseOutputTokens: '390000', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' }, streamingDuration: '2s' } },
+          { chatModel: { modelDisplayName: 'Gemini 4 Hydrogen (XHigh)', chatStartMetadata: { contextWindowMetadata: { estimatedTokensUsed: 100000, maxContextTokens: 512000 } }, usage: { messageId: 'm1', inputTokens: '10000', cacheReadTokens: '80000', outputTokens: '10000', responseOutputTokens: '10000', apiProvider: 'API_PROVIDER_GOOGLE_GEMINI' }, streamingDuration: '2s' } },
+        ] } }),
   });
   const inlineHtml = `<!doctype html><html><head><meta charset="utf-8"><style>
     body{margin:0;padding:40px;background:#17181a;color:#ddd;font:13px "Segoe UI",sans-serif}
@@ -259,6 +264,72 @@ test('font sync, scope switching and quota window reference render end-to-end in
   // 1. Font sync across inline widget, usage dialog, and update dialog
   await evalJs(`() => { document.documentElement.style.setProperty('--ui-font-family', '"Georgia"'); }`);
   await waitUntil(`() => getComputedStyle(document.getElementById('ag-pulse-status-bar').shadowRoot.querySelector('.bar')).fontFamily.includes('Georgia')`, 'inline widget font synced to Georgia');
+
+  // 1b. PR #122 / Issue #120: ignore low-contrast host DOM --primary button surfaces
+  // (e.g. Antigravity IDE dark #404754 on #1a1c22), falling back to hostTheme.primary or palette defaults.
+  await evalJs(`() => {
+    document.body.dataset.theme = 'dark';
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty('--background', '#1a1c22');
+    rootStyle.setProperty('--primary', '#404754');
+  }`);
+  await waitUntil(`() => {
+    const bar = document.getElementById('ag-pulse-status-bar');
+    const sr = bar?.shadowRoot;
+    return bar?.style.getPropertyValue('--pulse-background') === 'rgb(26 28 34)'
+      && bar?.style.getPropertyValue('--pulse-accent') === ''
+      && sr && getComputedStyle(sr.getElementById('five-fill')).backgroundColor === 'rgb(126, 165, 255)'
+      && getComputedStyle(sr.getElementById('context-fill')).backgroundColor === 'rgb(118, 136, 178)';
+  }`, 'dark low-contrast DOM --primary falls back to built-in palette');
+
+  panelTheme = { fontFamily: "'Fira Code'", mode: 'dark', dark: { background: '#1e1e1e', primary: '#7b3fe4' } };
+  await evalJs(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.querySelector('.refresh').click()`);
+  await waitUntil(`() => {
+    const sr = document.getElementById('ag-pulse-status-bar')?.shadowRoot;
+    return sr && getComputedStyle(sr.getElementById('five-fill')).backgroundColor === 'rgb(123, 63, 228)';
+  }`, 'low-contrast DOM --primary falls back to explicit hostTheme.dark.primary');
+
+  await evalJs(`() => { document.documentElement.style.setProperty('--primary', '#da7756'); }`);
+  await waitUntil(`() => {
+    const sr = document.getElementById('ag-pulse-status-bar')?.shadowRoot;
+    return sr && getComputedStyle(sr.getElementById('five-fill')).backgroundColor === 'rgb(218, 119, 86)';
+  }`, 'high-contrast DOM --primary overrides hostTheme.dark.primary');
+
+  panelTheme = { fontFamily: "'Fira Code'", mode: 'dark', dark: { background: '#1e1e1e' } };
+  await evalJs(`() => {
+    document.body.dataset.theme = 'light';
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty('--background', '#ffffff');
+    rootStyle.setProperty('--primary', '#e8edf4');
+    document.getElementById('ag-pulse-status-bar').shadowRoot.querySelector('.refresh').click();
+  }`);
+  await waitUntil(`() => {
+    const bar = document.getElementById('ag-pulse-status-bar');
+    const sr = bar?.shadowRoot;
+    return bar?.dataset.pulseTheme === 'light'
+      && sr && getComputedStyle(sr.getElementById('five-fill')).backgroundColor === 'rgb(70, 120, 230)';
+  }`, 'light low-contrast DOM --primary falls back to built-in light palette');
+
+  await evalJs(`() => { document.documentElement.style.setProperty('--primary', '#007acc'); }`);
+  await waitUntil(`() => {
+    const sr = document.getElementById('ag-pulse-status-bar')?.shadowRoot;
+    return sr && getComputedStyle(sr.getElementById('five-fill')).backgroundColor === 'rgb(0, 122, 204)';
+  }`, 'light high-contrast DOM --primary applies normally');
+
+  await evalJs(`() => {
+    delete document.body.dataset.theme;
+    const rootStyle = document.documentElement.style;
+    rootStyle.removeProperty('--background');
+    rootStyle.removeProperty('--primary');
+    document.getElementById('ag-pulse-status-bar').shadowRoot.querySelector('.refresh').click();
+  }`);
+  await waitUntil(`() => {
+    const bar = document.getElementById('ag-pulse-status-bar');
+    const sr = bar?.shadowRoot;
+    return bar?.dataset.pulseTheme === 'dark'
+      && sr && getComputedStyle(sr.getElementById('five-fill')).backgroundColor === 'rgb(126, 165, 255)'
+      && getComputedStyle(sr.getElementById('context-fill')).backgroundColor === 'rgb(118, 136, 178)';
+  }`, 'baseline dark theme restored after DOM --primary fallback checks');
 
   // Quota window token hints sit inline beside forecast with full detail in tooltip
   const quotaText = await evalJs(`() => {
@@ -503,8 +574,14 @@ test('font sync, scope switching and quota window reference render end-to-end in
   await evalJs(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot.getElementById('details-tab').click()`);
   await waitUntil(`() => {
     const vs = document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot;
-    return vs.getElementById('details').hidden === false && vs.querySelectorAll('#legend button').length === ${stressModelList.length} && vs.querySelectorAll('#table-body tr').length === ${stressModelList.length};
-  }`, 'details tab with 22 model rows visible');
+    const rows = vs.querySelectorAll('#table-body tr').length;
+    return vs.getElementById('details').hidden === false && vs.getElementById('tier-merge-toggle')?.getAttribute('aria-pressed') === 'true' && rows > 0 && rows < ${stressModelList.length} && vs.querySelectorAll('#table-body .tier-pill').length > 0;
+  }`, 'details tab with default merged tier rows visible');
+  await evalJs(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot.getElementById('tier-merge-toggle').click()`);
+  await waitUntil(`() => {
+    const vs = document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard').firstElementChild.shadowRoot;
+    return vs.getElementById('tier-merge-toggle')?.getAttribute('aria-pressed') === 'false' && vs.querySelectorAll('#legend button').length === ${stressModelList.length} && vs.querySelectorAll('#table-body tr').length === ${stressModelList.length};
+  }`, 'details tab with 22 unmerged model rows visible');
 
   const detailsMetrics = await evalJs(`() => {
     const ud = document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('usage-dashboard');
@@ -652,22 +729,40 @@ test('font sync, scope switching and quota window reference render end-to-end in
   await evalJs(`() => document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('card-language-zh').click()`);
   await waitUntil(`() => (document.getElementById('ag-pulse-status-bar').shadowRoot.getElementById('week-usage').getAttribute('title') || '').includes('129.9M toks (约 216.2M 满额)')`, 'restore zh-CN');
 
+  const compactCheck = await evalJs(`() => {
+    const sr = document.getElementById('ag-pulse-status-bar').shadowRoot;
+    const btn = sr.getElementById('context-compact-btn');
+    const editor = document.querySelector('[contenteditable="true"]');
+    const before = { visible: btn && !btn.hidden, text: btn?.textContent?.trim(), disabled: btn?.disabled };
+    btn?.click();
+    const after = {
+      editorText: editor?.textContent?.trim(),
+      chipText: sr.getElementById('context-percent')?.textContent,
+      ringCompacting: sr.getElementById('context-ring')?.getAttribute('data-compacting'),
+      btnDisabled: btn?.disabled,
+    };
+    if (editor) editor.textContent = '';
+    return { before, after };
+  }`);
+  assert.deepEqual(compactCheck.before, { visible: true, text: '压缩', disabled: false });
+  assert.deepEqual(compactCheck.after, { editorText: '/compact', chipText: '压缩中', ringCompacting: 'true', btnDisabled: true });
+
   // 2. Navigate to Sidecar Panel and verify Fira Code font sync + compact quota height + toks cache card
   signedIn = true;
   await cdp.command('Page.navigate', { url: `${baseUrl}/` });
   await waitUntil(`() => document.getElementById('strip-tps')?.textContent && document.getElementById('strip-tps').textContent !== '—'`, 'panel hydrated');
   await evalJs(`() => {
     document.querySelector('.widget').style.height = '580px';
-    document.getElementById('context-tab').click();
+    document.getElementById('quota-tab').click();
   }`);
   const panelCheck = await evalJs(`() => {
-    const card = document.getElementById('context-card');
+    const quotaCard = document.getElementById('quota-card');
     const fiveUsage = document.getElementById('five-usage');
     const weekUsage = document.getElementById('week-usage');
     const fiveForecast = document.getElementById('five-forecast-text');
     const uRect = fiveUsage.getBoundingClientRect();
     const fRect = fiveForecast.getBoundingClientRect();
-    const contextRes = {
+    const quotaRes = {
       rootFont: getComputedStyle(document.documentElement).fontFamily,
       fiveHidden: fiveUsage.hidden,
       fiveVal: fiveUsage.textContent,
@@ -675,11 +770,20 @@ test('font sync, scope switching and quota window reference render end-to-end in
       weekVal: weekUsage.textContent,
       weekTitle: weekUsage.getAttribute('title'),
       sameRow: Math.abs(uRect.top - fRect.top) < 6 && uRect.left >= fRect.right - 1,
-      contextFillBg: getComputedStyle(document.getElementById('context-fill')).backgroundColor,
       fiveFillBg: getComputedStyle(document.getElementById('five-fill')).backgroundColor,
+      quotaFits: quotaCard.scrollHeight <= quotaCard.clientHeight + 1,
+      quotaScrollH: quotaCard.scrollHeight,
+      quotaClientH: quotaCard.clientHeight,
+    };
+    document.getElementById('context-tab').click();
+    const card = document.getElementById('context-card');
+    const contextRes = {
+      ...quotaRes,
+      contextFillBg: getComputedStyle(document.getElementById('context-fill')).backgroundColor,
       roundsPill: document.getElementById('context-rounds-pill')?.textContent,
       roundsPillTitle: document.getElementById('context-rounds-pill')?.getAttribute('title'),
       contextTabTitle: document.getElementById('context-tab')?.getAttribute('title'),
+      contextHasQuota: Boolean(card.querySelector('.quota-details,#panel-active-group,#panel-quota-siblings,#host-i18n-row')),
       fits: card.scrollHeight <= card.clientHeight + 1,
       scrollH: card.scrollHeight,
       clientH: card.clientHeight,
@@ -707,6 +811,8 @@ test('font sync, scope switching and quota window reference render end-to-end in
   assert.equal(panelCheck.roundsPill, '1 轮 · 1 步');
   assert.match(panelCheck.roundsPillTitle || '', /1 轮用户输入 · 1 个轨迹步骤/);
   assert.ok((panelCheck.contextTabTitle || '').includes('1 轮'));
+  assert.equal(panelCheck.contextHasQuota, false, 'context-card must not embed quota or duplicate host-i18n');
+  assert.equal(panelCheck.quotaFits, true, `quota-card should fit cleanly inside 580px frame: ${panelCheck.quotaScrollH} vs ${panelCheck.quotaClientH}`);
   assert.equal(panelCheck.fits, true, `context-card should fit cleanly inside 580px frame: ${panelCheck.scrollH} vs ${panelCheck.clientH}`);
   assert.equal(panelCheck.stripCacheTotal, '61.8M tok', 'panel top strip retains tok');
   assert.equal(panelCheck.cacheCoverage, '61,795,796');

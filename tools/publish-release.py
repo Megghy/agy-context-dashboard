@@ -48,7 +48,7 @@ def checked_assets(root, tag):
         for required in ['compat/update-ui.cjs', 'compat/update-worker.py', 'compat/update-lock.py',
                          'sidecars/panel/updater.mjs', 'sidecars/panel/local-conversations.mjs', 'docs/UPDATES.md']:
             archive.getinfo(prefix + required)
-        for required in ['install.sh', 'uninstall.sh', 'install.ps1', 'compat/launch-config.mjs', 'compat/launch_config.py', 'compat/desktop_launcher.py', 'compat/debug-relaunch.mjs', 'compat/debug-relaunch-worker.mjs', 'compat/runtime-ui.mjs', 'compat/theme.cjs', 'compat/host-theme.mjs', 'compat/preferences.mjs', 'compat/sidecar-owner.mjs', 'sidecars/panel/context.mjs', 'cli/statusline.mjs', 'cli/metrics.mjs', 'cli/render.mjs', 'cli/lifecycle.py', 'docs/CLI.md', 'docs/assets/cli-conversation.png', 'docs/assets/cli-conversation-zh.png']:
+        for required in ['install.sh', 'uninstall.sh', 'install.ps1', 'compat/launch-config.mjs', 'compat/launch_config.py', 'compat/desktop_launcher.py', 'compat/debug-relaunch.mjs', 'compat/debug-relaunch-worker.mjs', 'compat/runtime-ui.mjs', 'compat/theme.cjs', 'compat/host-theme.mjs', 'compat/remote-ssh.mjs', 'compat/preferences.mjs', 'compat/sidecar-owner.mjs', 'sidecars/panel/context.mjs', 'cli/statusline.mjs', 'cli/metrics.mjs', 'cli/render.mjs', 'cli/lifecycle.py', 'docs/CLI.md', 'docs/assets/cli-conversation.png', 'docs/assets/cli-conversation-zh.png']:
             archive.getinfo(prefix + required)
     ide_version = json.loads((root / 'ide/package.json').read_text(encoding='utf-8'))['version']
     if ide_version != version:
@@ -67,7 +67,7 @@ def checked_assets(root, tag):
             archive.getinfo(name)
         for name in IDE_RUNTIME_MODULES:
             archive.getinfo('extension/' + name)
-        for name in ['compat/usage-ui.cjs', 'compat/host-i18n.cjs', 'compat/host-i18n-dict.json', 'compat/context-limit.cjs', 'sidecars/panel/rate-quality.mjs', 'sidecars/panel/usage.mjs']:
+        for name in ['compat/host-theme.mjs', 'compat/remote-ssh.mjs', 'compat/usage-ui.cjs', 'compat/host-i18n.cjs', 'compat/host-i18n-dict.json', 'compat/context-limit.cjs', 'sidecars/panel/rate-quality.mjs', 'sidecars/panel/usage.mjs']:
             archive.getinfo('extension/' + name)
         for name in LARGE_CONVERSATION_MODULES:
             archive.getinfo('extension/' + name)
@@ -107,10 +107,28 @@ class GitHub:
             page += 1
 
 
+def generate_contributor_notes(client, tag):
+    """Fetch GitHub auto-generated New Contributors section if available."""
+    try:
+        generated = client.request('POST', 'releases/generate-notes', {'tag_name': tag})
+    except Exception:
+        return ''
+    body = (generated or {}).get('body', '')
+    marker = '## New Contributors'
+    idx = body.find(marker)
+    if idx == -1:
+        return ''
+    return body[idx:].strip()
+
+
 def publish(client, tag, commit, notes, assets):
     release = client.find(tag)
     if release and not release['draft']:
         raise ValueError('Release is already public; withdraw it before replacing its package')
+    if '## New Contributors' not in notes:
+        contrib = generate_contributor_notes(client, tag)
+        if contrib:
+            notes = notes.rstrip() + '\n\n---\n\n' + contrib
     details = {'tag_name': tag, 'target_commitish': commit, 'name': 'Antigrative Dashboard ' + tag,
                'body': notes, 'draft': True, 'prerelease': False}
     release = client.request('PATCH', 'releases/' + str(release['id']), details) if release else client.request('POST', 'releases', details)

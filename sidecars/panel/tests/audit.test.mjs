@@ -308,7 +308,7 @@ test('SessionAuditService and MetricsStore recover unindexed archived sessions v
   assert.equal(rpcSnap.sessionError, null);
   assert.equal(rpcSnap.speed.archivedFallback, 'rpc');
   assert.equal(rpcSnap.speed.model, 'Gemini 4 Hydrogen (High)');
-  assert.equal(rpcSnap.speed.context.usedTokens, 50000);
+  assert.equal(rpcSnap.speed.context.usedTokens, 50200);
   assert.equal(rpcSnap.speed.context.maxTokens, 1048576);
 
   const coldSnap = await store.snapshot({ conversationId: coldCid, force: true });

@@ -1,7 +1,50 @@
 // User-owned paths, shared by the collector, SDK and both renderer adapters.
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
+
+function hubServerLogCandidates(home) {
+  const dir = join(home, '.antigravity-hub-server', 'data');
+  try {
+    const dirInfo = lstatSync(dir);
+    if (dirInfo.isSymbolicLink() || !dirInfo.isDirectory()) return [];
+    const matched = [];
+    for (const name of readdirSync(dir)) {
+      if (!/^ls-[^/\\]+\.log$/i.test(name)) continue;
+      const full = join(dir, name);
+      try {
+        const info = lstatSync(full);
+        if (info.isSymbolicLink() || !info.isFile()) continue;
+        matched.push({ full, mtimeMs: Number.isFinite(info.mtimeMs) ? info.mtimeMs : 0 });
+      } catch {}
+    }
+    matched.sort((a, b) => b.mtimeMs - a.mtimeMs || b.full.localeCompare(a.full));
+    return matched.slice(0, 16).map(item => item.full);
+  } catch {
+    return [];
+  }
+}
+
+export function isRemoteHeadlessHost({ env = process.env, platform = process.platform, server = null, hasLocalHostApp = false } = {}) {
+  if (server?.remoteHub === true) return true;
+  if (platform !== 'linux' || hasLocalHostApp) return false;
+  const hasDisplay = Boolean(
+    (typeof env?.DISPLAY === 'string' && env.DISPLAY.trim())
+    || (typeof env?.WAYLAND_DISPLAY === 'string' && env.WAYLAND_DISPLAY.trim()),
+  );
+  const isSsh = Boolean(
+    (typeof env?.SSH_CONNECTION === 'string' && env.SSH_CONNECTION.trim())
+    || (typeof env?.SSH_CLIENT === 'string' && env.SSH_CLIENT.trim())
+    || (typeof env?.SSH_TTY === 'string' && env.SSH_TTY.trim()),
+  );
+  const isWsl = Boolean(
+    (typeof env?.WSL_DISTRO_NAME === 'string' && env.WSL_DISTRO_NAME.trim())
+    || (typeof env?.WSL_INTEROP === 'string' && env.WSL_INTEROP.trim()),
+  );
+  if (isSsh) return true;
+  if (isWsl && !hasDisplay) return true;
+  return !hasDisplay;
+}
 
 export function platformPaths({ platform = process.platform, home = homedir(), env = process.env } = {}) {
   let config, local;
@@ -20,8 +63,9 @@ export function platformPaths({ platform = process.platform, home = homedir(), e
   const profile = env.AG_PULSE_PROFILE || (typeof saved.profile === 'string' ? saved.profile : null) || join(config, 'Antigravity');
   const profileLog=join(profile,'logs','language_server.log');
   const log=env.AG_PULSE_LOG || (platform==='darwin'?join(home,'Library','Logs','Antigravity','language_server.log'):profileLog);
+  const hubLogs = !env.AG_PULSE_LOG && (platform === 'linux' || platform === 'darwin') ? hubServerLogCandidates(home) : [];
   return {
-    profile, log, logCandidates:env.AG_PULSE_LOG?[log]:[...new Set([log,profileLog,...(platform==='win32'?[join(home,'.gemini','antigravity','logs','language_server.log')]:[])])],
+    profile, log, logCandidates:env.AG_PULSE_LOG?[log]:[...new Set([log,profileLog,...(platform==='win32'?[join(home,'.gemini','antigravity','logs','language_server.log')]:[]),...hubLogs])],
     settings,
     pluginConfig: join(home, '.gemini', 'config', 'config.json'),
     data: env.ANTIGRAVITY_EXECUTABLE_DATA_DIR || join(home, '.gemini', 'antigravity', 'sidecar_data', 'antigravity-pulse', 'panel', 'data'),

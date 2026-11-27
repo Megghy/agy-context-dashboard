@@ -32,11 +32,12 @@ let inspectedConversationId=null,lastContextDetailAt=0;
 let refreshEpoch=0,inFlightRefreshEpoch=-1,inFlightNeedDetail=false,inFlightUsageSync=false,queuedRefresh=false,queuedRefreshForce=false,queuedRefreshUsageSync=false;
 let insightsEpoch=0,queuedInsights=false,queuedInsightsForce=false;
 let auditEpoch=0,scopeRequestEpoch=0,didInitialUsageSync=false,didSyncUsageScope=false,usageGuideDismissed=false;
-let compositionView='bar',trendMode='total',tokenBaseExpanded=false,stepsDrawerOpen=false;
+let compositionView='bar',trendMode='total',tokenBaseExpanded=false,stepsDrawerOpen=false,swarmRosterFilter='active';
 const expandedDrilldownGroups=new Set(['Rules']);
+const expandedDrilldownMore=new Set();
 const expandedMcpServers=new Set();
 let auditOpen=false,auditTab='files',auditStepFilter='all',auditData=null,auditConvId=null,auditLoading=false,auditError=null,highlightedStepIndex=null;
-let insightsData=null,insightsLoading=false,insightsError=null,heatmapMetric='sessions',insightsSearchTimer=null;
+let insightsData=null,insightsLoading=false,insightsError=null,heatmapMetric='sessions',selectedHeatmapDate=null,insightsLoadedDate=null,insightsSearchTimer=null;
 let refreshRequest=null,manualRequest=null;
 let relaunchBusy=false,relaunchStatusKey='',autoRelaunchState={busy:false,error:false,revision:-1,value:true};
 const host = window.sidecar;
@@ -73,6 +74,13 @@ const contextLimit=language.connectContextLimit({
 });
 const hostUiLocalization=language.connectHostUiLocalization({initial:localGet('ag-pulse-host-ui-localization')==='true',cache:value=>localSet('ag-pulse-host-ui-localization',value?'true':'false'),write:preferenceRequest,
   changed:()=>{localize();}});
+const readBarColorsCache=()=>{try{const raw=localGet('ag-pulse-bar-colors');return raw?JSON.parse(raw):null;}catch{return null;}};
+const barColorsPref=language.connectBarColors({initial:readBarColorsCache(),cache:value=>localSet('ag-pulse-bar-colors',JSON.stringify(value)),write:preferenceRequest,
+  changed:()=>{themeController?.setBarColors?.(barColorsPref.colors);}});
+const themeModePref=language.connectThemeMode({initial:localGet('ag-pulse-theme-mode'),cache:value=>localSet('ag-pulse-theme-mode',value),write:preferenceRequest,
+  changed:()=>{themeController?.setThemeMode?.(themeModePref.value);}});
+themeController?.setThemeMode?.(themeModePref.value);
+themeController?.setBarColors?.(barColorsPref.colors);
 const usageScope=language.connectUsageScope({initial:localGet('ag-pulse-usage-scope'),cache:value=>localSet('ag-pulse-usage-scope',value),write:preferenceRequest,
   changed:()=>{usageDashboard?.renderIfVisible?.();}});
 const usageFactory=typeof createUsageDashboard==='function'?createUsageDashboard:window.__agPulseUsageFactory;
@@ -122,6 +130,8 @@ function activeConversationId(){
 }
 function setInspectedConversation(id){
   inspectedConversationId=id||null;
+  swarmRosterFilter='active';
+  expandedDrilldownMore.clear();
   auditOpen=false;auditData=null;auditConvId=null;auditError=null;highlightedStepIndex=null;
   renderAuditSection();
   lastContextDetailAt=0;
@@ -140,6 +150,7 @@ function showPanelView(nextView,{fromUsageUi=false}={}){
   const isSession=nextView==='session';
   const isUsage=nextView==='activity'||nextView==='models';
   const isInsights=nextView==='insights';
+  if(!isInsights)hideHeatmapTip();
   hidden('session-status-strip',!isSession);
   hidden('session-card-stage',!isSession);
   const wasUsage=prevView==='activity'||prevView==='models';
@@ -169,11 +180,12 @@ for(const tab of viewTabs){
 }
 
 function showCard(name,animate=false) {
-  if(!['speed','cache','context'].includes(name))return;
+  const cards=['speed','cache','quota','context'];
+  if(!cards.includes(name))return;
   const changed=selectedCard!==name;selectedCard=name;
   cardMotion?.cancel();cardMotion=null;
   for (const chip of chips){const selected=chip.dataset.card===name;chip.setAttribute('aria-selected',String(selected));chip.tabIndex=selected?0:-1;}
-  for (const nameKey of ['speed','cache','context']) $(`${nameKey}-card`).hidden = name !== nameKey;
+  for (const nameKey of cards) $(`${nameKey}-card`).hidden = name !== nameKey;
   if(changed&&animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches)cardMotion=$(`${name}-card`).animate([{opacity:.6,transform:'translateY(4px)'},{opacity:1,transform:'translateY(0)'}],{duration:160,easing:'cubic-bezier(.23,1,.32,1)'});
   if(name==='context'&&changed){
     lastContextDetailAt=0;
@@ -210,16 +222,6 @@ function localize(){
     hostI18nToggle.title=hostUiLocalization.error?`${actionLabel} · ${t('hostUiLocalizationSaveFailed')}`:`${actionLabel} · ${hostI18nHint}`;
     hostI18nToggle.dataset.saveFailed=String(hostUiLocalization.error);
   }
-  const hostI18nLabel=$('host-i18n-label');
-  if(hostI18nLabel)hostI18nLabel.title=hostI18nHint;
-  for(const button of document.querySelectorAll('[data-host-i18n-choice]')){
-    const value=button.dataset.hostI18nChoice==='true',active=hostUiLocalization.enabled===value,failed=hostUiLocalization.error&&active,labelText=t(value?'hostUiLocalizationOn':'hostUiLocalizationOff');
-    button.setAttribute('aria-label',`${t('hostUiLocalization')}: ${labelText}`);
-    button.title=failed?`${hostI18nHint} · ${t('hostUiLocalizationSaveFailed')}`:hostI18nHint;
-    button.setAttribute('aria-pressed',String(active));button.dataset.saveFailed=String(failed);
-  }
-  const hostI18nNote=$('host-i18n-save-note');
-  if(hostI18nNote){hostI18nNote.hidden=!hostUiLocalization.error;hostI18nNote.textContent=hostUiLocalization.error?t('hostUiLocalizationSaveFailed'):'';}
   usageDashboard?.renderIfVisible?.();
 }
 
@@ -228,6 +230,44 @@ function chooseGroup(groups, speed, composerModel) {
 }
 function groupLabel(value) {
   return language.quotaGroupLabel(value);
+}
+
+function compactResetCountdown(resetAt, now) {
+  if (!resetAt) return '';
+  const raw = language.countdown(resetAt, now);
+  if (!raw || raw === '—') return '';
+  return /^\d/.test(raw) ? raw.replace(/\s+/g, '') : raw;
+}
+
+function renderQuotaStrip(now = Date.now() + serverOffset) {
+  const tab = $('quota-tab');
+  if (!tab) return;
+  const visible = language.quotaWindows(group), isArgon = language.quotaGroupKind(group) === 'gemini-argon';
+  const hasFive = visible.includes('5h'), hasWeek = visible.includes('weekly');
+  const win5h = hasFive ? group?.windows?.['5h'] : null, winWk = hasWeek ? group?.windows?.['weekly'] : null;
+  const rem5h = language.quotaRemaining(win5h), remWk = language.quotaRemaining(winWk);
+  const cd5h = win5h && !win5h.disabled ? compactResetCountdown(win5h.resetAt, now) : '';
+  const cdWk = winWk && !winWk.disabled ? compactResetCountdown(winWk.resetAt, now) : '';
+  if (hasFive) {
+    text('strip-quota-unit', '5h');
+    hidden('strip-quota-unit', false);
+    text('strip-quota', win5h?.disabled ? '—' : percent(rem5h));
+    const wkPart = hasWeek && typeof remWk === 'number' && !winWk?.disabled ? `${t('weekShort')} ${Math.round(remWk * 100)}%` : '';
+    text('strip-quota-sub', [wkPart, cd5h].filter(Boolean).join(' · ') || '—');
+  } else if (hasWeek) {
+    text('strip-quota-unit', t('weekShort'));
+    hidden('strip-quota-unit', false);
+    text('strip-quota', winWk?.disabled ? '—' : percent(remWk));
+    text('strip-quota-sub', cdWk || (group ? groupLabel(group) : '—'));
+  } else {
+    hidden('strip-quota-unit', true);
+    text('strip-quota', '—');
+    text('strip-quota-sub', '—');
+  }
+  const tipParts = [group ? groupLabel(group) : t('unavailableQuota')];
+  if (hasFive) tipParts.push(`5h ${win5h?.disabled ? t('unavailableQuota') : percent(rem5h)}${cd5h ? ` (${cd5h})` : ''}`);
+  if (hasWeek) tipParts.push(`${t(isArgon ? 'argonWeek' : 'weekShort')} ${winWk?.disabled ? t('unavailableQuota') : percent(remWk)}${cdWk ? ` (${cdWk})` : ''}`);
+  setTip(tab, tipParts.join(' · '));
 }
 
 function renderQuota(window, prefix, now = Date.now() + serverOffset) {
@@ -351,6 +391,80 @@ function renderAccountCredits(credits) {
   setAttr(badge, 'title', parts.join(' · ') || null);
 }
 
+const DRILLDOWN_CAP = 6;
+
+function createDrilldownChevron() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'drilldown-chev');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', 'M4.5 3 7.5 6l-3 3');
+  svg.append(path);
+  return svg;
+}
+
+function splitDrilldownPath(display) {
+  const idx = Math.max(display.lastIndexOf('/'), display.lastIndexOf('\\'));
+  if (idx < 0) return { base: display, dir: '' };
+  return { base: display.slice(idx + 1) || display, dir: display.slice(0, idx) };
+}
+
+function renderDrilldownBudgetCard(label, used, max) {
+  const ratio = max > 0 ? used / max : 0;
+  const pct = Math.round(ratio * 100);
+  const levelClass = ratio >= 0.9 ? 'is-danger' : '';
+  const card = document.createElement('div');
+  card.className = 'drilldown-budget-card';
+  const top = document.createElement('div');
+  top.className = 'drilldown-budget-top';
+  const pctEl = Object.assign(document.createElement('span'), {
+    className: levelClass ? `drilldown-budget-pct ${levelClass}` : 'drilldown-budget-pct',
+    textContent: `${pct}%`,
+  });
+  top.append(Object.assign(document.createElement('span'), { className: 'drilldown-budget-lbl', textContent: label }), pctEl);
+  const track = document.createElement('div');
+  track.className = 'drilldown-budget-track';
+  const fill = document.createElement('i');
+  if (levelClass) fill.className = levelClass;
+  fill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  track.append(fill);
+  const nums = Object.assign(document.createElement('div'), {
+    className: 'drilldown-budget-nums',
+    textContent: `${count(used)} / ${count(max)} ${tokUnit(max)}`,
+  });
+  card.append(top, track, nums);
+  return card;
+}
+
+function createDrilldownItemRow(display, tokens, groupTokens, maxItemTokens, rawTitle, splitDir = false, isSub = false) {
+  const share = groupTokens > 0 ? Math.round((tokens / groupTokens) * 100) : 0;
+  const fillW = maxItemTokens > 0 && tokens > 0 ? Math.max(4, Math.round((tokens / maxItemTokens) * 100)) : 0;
+  const row = document.createElement('div');
+  row.className = isSub ? 'drilldown-item is-sub' : 'drilldown-item';
+  setAttr(row, 'title', rawTitle);
+  const fill = document.createElement('i');
+  fill.className = 'drilldown-item-fill';
+  fill.style.width = `${Math.min(100, fillW)}%`;
+  const main = document.createElement('div');
+  main.className = 'drilldown-item-main';
+  const { base, dir } = splitDir ? splitDrilldownPath(display) : { base: display, dir: '' };
+  main.append(Object.assign(document.createElement('span'), { className: 'drilldown-item-name', textContent: base }));
+  if (dir) main.append(Object.assign(document.createElement('span'), { className: 'drilldown-item-sub', textContent: dir }));
+  const val = document.createElement('span');
+  val.className = 'drilldown-item-val';
+  val.append(document.createTextNode(count(tokens)));
+  if (groupTokens > 0) {
+    val.append(document.createTextNode(' '), Object.assign(document.createElement('span'), {
+      className: 'drilldown-item-pct',
+      textContent: `${share === 0 && tokens > 0 ? '<1' : share}%`,
+    }));
+  }
+  row.append(fill, main, val);
+  return row;
+}
+
 function renderTokenBaseDrilldown(customization) {
   const wrap = $('panel-token-base-drilldown'), toggle = $('token-base-toggle'), tree = $('token-base-tree');
   if (!wrap || !toggle || !tree) return;
@@ -358,41 +472,39 @@ function renderTokenBaseDrilldown(customization) {
   hidden('panel-token-base-drilldown', !available);
   if (!available) return;
 
-  text('token-base-toggle-label', `${tokenBaseExpanded ? '▾' : '▸'} ${t('tokenBaseDrilldown')}`);
+  text('token-base-toggle-label', t('tokenBaseDrilldown'));
+  const budgetRatio = customization.budget ? customization.tokens / customization.budget : null;
+  const budgetPct = budgetRatio !== null ? Math.round(budgetRatio * 100) : null;
   const summary = customization.budget
-    ? `${compact(customization.tokens)} / ${compact(customization.budget)} (${Math.round((customization.tokens / customization.budget) * 100)}%)`
+    ? `${compact(customization.tokens)} / ${compact(customization.budget)} · ${budgetPct}%`
     : `${compact(customization.tokens)} ${tokUnit(customization.tokens)}`;
   text('token-base-toggle-summary', summary);
+  const summaryEl = $('token-base-toggle-summary');
+  if (summaryEl) {
+    const level = budgetRatio !== null && budgetRatio >= 0.9 ? 'danger' : null;
+    setAttr(summaryEl, 'data-level', level);
+  }
   setAttr(toggle, 'aria-expanded', String(tokenBaseExpanded));
   hidden('token-base-tree', !tokenBaseExpanded);
   if (!tokenBaseExpanded) return;
 
-  const sig = JSON.stringify([customization.tokens, customization.budget, customization.rulesBudget, customization.drilldown, [...expandedDrilldownGroups], [...expandedMcpServers], language.language]);
+  const sig = JSON.stringify([customization.tokens, customization.budget, customization.rulesBudget, customization.drilldown, [...expandedDrilldownGroups], [...expandedDrilldownMore], [...expandedMcpServers], language.language]);
   if (tree.dataset.signature === sig) return;
   tree.dataset.signature = sig;
 
+  const focusKey = document.activeElement?.closest?.('#token-base-tree')
+    ? document.activeElement.dataset.focusKey || null
+    : null;
   const nodes = [];
-  if (customization.budget) {
-    const row = document.createElement('div');
-    row.className = 'drilldown-budget-row';
-    const pct = Math.round((customization.tokens / customization.budget) * 100);
-    row.append(
-      Object.assign(document.createElement('span'), { textContent: t('tokenBaseCustomBudget') }),
-      Object.assign(document.createElement('span'), { textContent: `${count(customization.tokens)} / ${count(customization.budget)} (${pct}%)` }),
-    );
-    nodes.push(row);
-  }
-  if (customization.rulesBudget) {
-    const rulesGrp = customization.drilldown.find(g => g.id === 'rules');
-    const rulesTok = rulesGrp?.tokens ?? 0;
-    const row = document.createElement('div');
-    row.className = 'drilldown-budget-row';
-    const pct = Math.round((rulesTok / customization.rulesBudget) * 100);
-    row.append(
-      Object.assign(document.createElement('span'), { textContent: t('tokenBaseRulesBudget') }),
-      Object.assign(document.createElement('span'), { textContent: `${count(rulesTok)} / ${count(customization.rulesBudget)} (${pct}%)` }),
-    );
-    nodes.push(row);
+  if (customization.budget || customization.rulesBudget) {
+    const budgets = document.createElement('div');
+    budgets.className = 'drilldown-budgets';
+    if (customization.budget) budgets.append(renderDrilldownBudgetCard(t('tokenBaseCustomBudget'), customization.tokens, customization.budget));
+    if (customization.rulesBudget) {
+      const rulesGrp = customization.drilldown.find(g => g.id === 'rules');
+      budgets.append(renderDrilldownBudgetCard(t('tokenBaseRulesBudget'), rulesGrp?.tokens ?? 0, customization.rulesBudget));
+    }
+    nodes.push(budgets);
   }
 
   for (const grp of customization.drilldown) {
@@ -402,13 +514,25 @@ function renderTokenBaseDrilldown(customization) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'drilldown-group-btn';
+    btn.dataset.focusKey = `grp:${grp.name}`;
     btn.setAttribute('aria-expanded', String(isOpen));
     const grpTitle = t(DRILLDOWN_GROUP_KEYS[grp.id] || grp.name);
     const children = Array.isArray(grp.children) ? grp.children : [];
-    btn.append(
-      Object.assign(document.createElement('span'), { textContent: `${isOpen ? '▾' : '▸'} ${grpTitle} (${children.length})` }),
+    const grpShare = customization.tokens > 0 ? Math.round((grp.tokens / customization.tokens) * 100) : 0;
+    const left = document.createElement('span');
+    left.className = 'drilldown-group-left';
+    left.append(
+      createDrilldownChevron(),
+      Object.assign(document.createElement('span'), { className: 'drilldown-group-name', textContent: grpTitle }),
+      Object.assign(document.createElement('span'), { className: 'drilldown-count', textContent: smallCount(children.length) }),
+    );
+    const right = document.createElement('span');
+    right.className = 'drilldown-group-meta';
+    right.append(
+      Object.assign(document.createElement('span'), { className: 'drilldown-group-share', textContent: `${grpShare === 0 && grp.tokens > 0 ? '<1' : grpShare}%` }),
       Object.assign(document.createElement('span'), { textContent: `${count(grp.tokens)} ${tokUnit(grp.tokens)}` }),
     );
+    btn.append(left, right);
     btn.addEventListener('click', () => {
       if (expandedDrilldownGroups.has(grp.name)) expandedDrilldownGroups.delete(grp.name);
       else expandedDrilldownGroups.add(grp.name);
@@ -419,17 +543,27 @@ function renderTokenBaseDrilldown(customization) {
     if (isOpen && children.length) {
       const list = document.createElement('div');
       list.className = 'drilldown-items';
-      for (const child of children) {
+      const showAll = expandedDrilldownMore.has(grp.name);
+      const visible = showAll || children.length <= DRILLDOWN_CAP ? children : children.slice(0, DRILLDOWN_CAP);
+      const maxItemTok = Math.max(1, ...children.map(c => c.tokens || 0));
+      const splitPaths = grp.id === 'rules';
+      for (const child of visible) {
         const hasSub = Array.isArray(child.children) && child.children.length > 0;
         if (hasSub) {
           const srvOpen = expandedMcpServers.has(child.name);
           const srvBtn = document.createElement('button');
           srvBtn.type = 'button';
           srvBtn.className = 'drilldown-group-btn';
-          srvBtn.append(
-            Object.assign(document.createElement('span'), { className: 'drilldown-item-name', textContent: `${srvOpen ? '▾' : '▸'} ${child.name} (${child.children.length})` }),
-            Object.assign(document.createElement('span'), { textContent: `${count(child.tokens)}` }),
+          srvBtn.dataset.focusKey = `mcp:${grp.name}:${child.name}`;
+          srvBtn.setAttribute('aria-expanded', String(srvOpen));
+          const sLeft = document.createElement('span');
+          sLeft.className = 'drilldown-group-left';
+          sLeft.append(
+            createDrilldownChevron(),
+            Object.assign(document.createElement('span'), { className: 'drilldown-group-name', textContent: child.name }),
+            Object.assign(document.createElement('span'), { className: 'drilldown-count', textContent: smallCount(child.children.length) }),
           );
+          srvBtn.append(sLeft, Object.assign(document.createElement('span'), { className: 'drilldown-group-meta', textContent: count(child.tokens) }));
           srvBtn.addEventListener('click', () => {
             if (expandedMcpServers.has(child.name)) expandedMcpServers.delete(child.name);
             else expandedMcpServers.add(child.name);
@@ -437,33 +571,41 @@ function renderTokenBaseDrilldown(customization) {
           });
           list.append(srvBtn);
           if (srvOpen) {
-            const sub = document.createElement('div');
-            sub.className = 'drilldown-subitems';
+            const subMax = Math.max(1, ...child.children.map(tItem => tItem.tokens || 0));
             for (const tool of child.children) {
-              const row = document.createElement('div');
-              row.className = 'drilldown-item';
-              const nEl = Object.assign(document.createElement('span'), { className: 'drilldown-item-name', textContent: tool.name });
-              setAttr(nEl, 'title', tool.name);
-              row.append(nEl, Object.assign(document.createElement('span'), { textContent: `${count(tool.tokens)}` }));
-              sub.append(row);
+              list.append(createDrilldownItemRow(tool.name, tool.tokens, child.tokens, subMax, tool.name, false, true));
             }
-            list.append(sub);
           }
         } else {
-          const row = document.createElement('div');
-          row.className = 'drilldown-item';
-          const display = sanitizeDisplayPath(child.name);
-          const nEl = Object.assign(document.createElement('span'), { className: 'drilldown-item-name', textContent: display });
-          setAttr(nEl, 'title', child.name);
-          row.append(nEl, Object.assign(document.createElement('span'), { textContent: `${count(child.tokens)}` }));
-          list.append(row);
+          list.append(createDrilldownItemRow(sanitizeDisplayPath(child.name), child.tokens, grp.tokens, maxItemTok, child.name, splitPaths, false));
         }
+      }
+      if (children.length > DRILLDOWN_CAP) {
+        const moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'drilldown-more-btn';
+        moreBtn.dataset.focusKey = `more:${grp.name}`;
+        moreBtn.textContent = showAll ? t('drilldownShowLess') : t('drilldownShowMore', { n: smallCount(children.length - DRILLDOWN_CAP) });
+        moreBtn.addEventListener('click', () => {
+          if (expandedDrilldownMore.has(grp.name)) expandedDrilldownMore.delete(grp.name);
+          else expandedDrilldownMore.add(grp.name);
+          renderTokenBaseDrilldown(customization);
+        });
+        list.append(moreBtn);
       }
       box.append(list);
     }
     nodes.push(box);
   }
   tree.replaceChildren(...nodes);
+  if (focusKey) {
+    for (const button of tree.querySelectorAll('button[data-focus-key]')) {
+      if (button.dataset.focusKey === focusKey) {
+        button.focus({ preventScroll: true });
+        break;
+      }
+    }
+  }
 }
 
 function renderContextComposition(composition) {
@@ -558,10 +700,12 @@ function renderContextComposition(composition) {
       const at = x(Math.min(Math.max(m.pointIndex || 0, 0), points.length - 1));
       const label = m.kind === 'checkpoint' ? t('trendCheckpoint') : t('trendCompaction');
       const reclaimed = Number.isFinite(m.before) && Number.isFinite(m.after) && m.before > m.after ? ` (${t('trendReclaimed', { tokens: compact(m.before - m.after) })})` : '';
-      const tip = `${label}: ${Number.isFinite(m.before) ? count(m.before) : '—'} → ${Number.isFinite(m.after) ? count(m.after) : '—'}${reclaimed}`;
+      const share = Number.isFinite(m.peakFraction) ? ` · ${t('trendPeakShare', { pct: Math.round(m.peakFraction * 100) })}` : '';
+      const peak = m.peak ? ` · ${t('trendPeakTrigger')}` : '';
+      const tip = `${label}: ${Number.isFinite(m.before) ? count(m.before) : '—'} → ${Number.isFinite(m.after) ? count(m.after) : '—'}${reclaimed}${share}${peak}`;
       return svgEl('g', { class: 'trend-marker-group' }, [
         svgEl('title', {}, [document.createTextNode(tip)]),
-        svgEl('line', { class: 'trend-marker', x1: at, x2: at, y1: P, y2: H - P }),
+        svgEl('line', { class: m.peak ? 'trend-marker trend-marker-peak' : 'trend-marker', x1: at, x2: at, y1: P, y2: H - P }),
         svgEl('line', { class: 'trend-marker-hit', x1: at, x2: at, y1: P, y2: H - P }),
       ]);
     });
@@ -603,10 +747,19 @@ function renderContextComposition(composition) {
     if (markers.length) {
       markersList.replaceChildren(...markers.map(m => {
         const label = m.kind === 'checkpoint' ? t('trendCheckpoint') : t('trendCompaction');
+        const beforeShort = Number.isFinite(m.before) ? compact(m.before) : '—';
+        const afterShort = Number.isFinite(m.after) ? compact(m.after) : '—';
+        const beforeFull = Number.isFinite(m.before) ? count(m.before) : '—';
+        const afterFull = Number.isFinite(m.after) ? count(m.after) : '—';
         const reclaimed = Number.isFinite(m.before) && Number.isFinite(m.after) && m.before > m.after ? ` (${t('trendReclaimed', { tokens: compact(m.before - m.after) })})` : '';
+        const pct = Number.isFinite(m.peakFraction) ? Math.round(m.peakFraction * 100) : null;
+        const badgeShare = pct !== null ? ` · ▲${pct}%` : '';
+        const tipShare = pct !== null ? ` · ${t('trendPeakShare', { pct })}` : '';
+        const peak = m.peak ? ` · ${t('trendPeakTrigger')}` : '';
         return Object.assign(document.createElement('span'), {
-          className: 'trend-marker-badge',
-          textContent: `${label}: ${compact(m.before)} → ${compact(m.after)}${reclaimed}`,
+          className: m.peak ? 'trend-marker-badge trend-marker-badge-peak' : 'trend-marker-badge',
+          textContent: `${label}: ${beforeShort} → ${afterShort}${badgeShare}`,
+          title: `${label}: ${beforeFull} → ${afterFull}${reclaimed}${tipShare}${peak}`,
         });
       }));
     }
@@ -773,16 +926,21 @@ async function loadInsights(force = false) {
   insightsLoading = true; insightsError = null;
   renderInsightsView();
   try {
+    const requestedDate = selectedHeatmapDate || '';
     const params = new URLSearchParams();
     if (force) params.set('force', '1');
     const statusEl = $('insights-status-filter'), sortEl = $('insights-sort'), searchEl = $('insights-search');
     if (statusEl?.value) params.set('status', statusEl.value);
     if (sortEl?.value) params.set('sort', sortEl.value);
     if (searchEl?.value?.trim()) params.set('query', searchEl.value.trim());
+    if (requestedDate) params.set('date', requestedDate);
     const res = await transportFetch(`/api/insights?${params}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(t('panelUnavailable'));
     const value = await res.json();
-    if (epoch === insightsEpoch) insightsData = value;
+    if (epoch === insightsEpoch) {
+      insightsData = value;
+      insightsLoadedDate = requestedDate || null;
+    }
   } catch (err) {
     if (epoch === insightsEpoch) insightsError = err?.message || t('panelUnavailable');
   } finally {
@@ -796,7 +954,7 @@ async function loadInsights(force = false) {
   }
 }
 
-function renderDistList(id, items, formatVal) {
+function renderDistList(id, items, { tone, metric, formatVal }) {
   const el = $(id);
   if (!el) return;
   const list = Array.isArray(items) ? items : [];
@@ -804,14 +962,226 @@ function renderDistList(id, items, formatVal) {
     el.replaceChildren(Object.assign(document.createElement('div'), { className: 'dist-row', textContent: '—' }));
     return;
   }
-  el.replaceChildren(...list.slice(0, 6).map(item => {
+  const top = list.slice(0, 6);
+  const maxMetric = Math.max(1, ...top.map(item => Number(metric(item)) || 0));
+  el.replaceChildren(...top.map(item => {
+    const wrap = document.createElement('div'); wrap.className = 'dist-item';
     const row = document.createElement('div'); row.className = 'dist-row';
+    const nameWrap = document.createElement('span'); nameWrap.className = 'dist-name-wrap';
+    const dot = document.createElement('i'); dot.className = `dist-dot dist-tone-${tone}`; dot.setAttribute('aria-hidden', 'true');
     const name = Object.assign(document.createElement('span'), { className: 'dist-name', textContent: item.name });
     setAttr(name, 'title', item.name);
-    const val = Object.assign(document.createElement('span'), { textContent: formatVal(item) });
-    row.append(name, val);
-    return row;
+    nameWrap.append(dot, name);
+    const valText = formatVal(item);
+    const val = Object.assign(document.createElement('span'), { className: 'dist-val', textContent: valText });
+    setAttr(val, 'title', valText);
+    row.append(nameWrap, val);
+    const bar = document.createElement('div'); bar.className = 'dist-bar'; bar.setAttribute('aria-hidden', 'true');
+    const rawVal = Math.max(0, Number(metric(item)) || 0);
+    const pct = rawVal > 0 ? Math.max(2, Math.min(100, (rawVal / maxMetric) * 100)) : 0;
+    const fill = document.createElement('i'); fill.className = `dist-tone-${tone}`; fill.style.width = `${pct.toFixed(1)}%`;
+    bar.append(fill);
+    wrap.append(row, bar);
+    return wrap;
   }));
+}
+
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function parseIsoDay(dateStr) {
+  if (typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+let heatmapTipScrollTop = 0, activeHeatmapTipCell = null;
+
+function hideHeatmapTip() {
+  activeHeatmapTipCell = null;
+  const tip = $('insights-heatmap-tip');
+  if (tip) tip.hidden = true;
+}
+
+function positionHeatmapTip(cell) {
+  const tip = $('insights-heatmap-tip');
+  if (!tip || tip.hidden || !cell?.isConnected || panelView !== 'insights') {
+    hideHeatmapTip();
+    return;
+  }
+  const rect = cell.getBoundingClientRect();
+  const rTip = tip.getBoundingClientRect();
+  const frame = $('insights-heatmap-section')?.closest('.widget')?.getBoundingClientRect();
+  const minLeft = Math.max(8, (frame ? frame.left : 0) + 8);
+  const maxRight = Math.min(window.innerWidth - 8, (frame ? frame.right : window.innerWidth) - 8);
+  const maxLeft = Math.max(minLeft, maxRight - rTip.width);
+  const left = Math.max(minLeft, Math.min(maxLeft, rect.left + rect.width / 2 - rTip.width / 2));
+  const above = rect.top - rTip.height - 6;
+  const top = above >= 8 ? above : Math.min(window.innerHeight - rTip.height - 8, rect.bottom + 6);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function showHeatmapTip(cell, item) {
+  const tip = $('insights-heatmap-tip');
+  if (!tip || !cell || !item) return;
+  activeHeatmapTipCell = cell;
+  heatmapTipScrollTop = $('insights-view')?.scrollTop ?? 0;
+  tip.textContent = t('insightsHeatmapTip', {
+    date: item.date,
+    sessions: smallCount(item.sessions || 0),
+    tokens: compact(item.tokens || 0),
+  });
+  tip.hidden = false;
+  positionHeatmapTip(cell);
+}
+
+function toggleHeatmapDate(nextDate) {
+  selectedHeatmapDate = selectedHeatmapDate === nextDate ? null : nextDate;
+  const total = insightsData?.totalMatchingSessions ?? 0;
+  const loaded = Array.isArray(insightsData?.sessions) ? insightsData.sessions.length : 0;
+  if (insightsLoadedDate || total > loaded) {
+    void loadInsights(false);
+  } else {
+    renderInsightsView();
+  }
+}
+
+function isMonotonicHeatmap(heat) {
+  if (!Array.isArray(heat) || heat.length < 2) return false;
+  let prev = null;
+  for (const item of heat) {
+    const parsed = parseIsoDay(item?.date);
+    if (!parsed) return false;
+    if (prev !== null && parsed.getTime() <= prev) return false;
+    prev = parsed.getTime();
+  }
+  return true;
+}
+
+function renderInsightsHeatmap(heat) {
+  setAttr($('heatmap-metric-sessions'), 'aria-pressed', String(heatmapMetric === 'sessions'));
+  setAttr($('heatmap-metric-tokens'), 'aria-pressed', String(heatmapMetric === 'tokens'));
+  const heatGrid = $('insights-heatmap-grid'), monthsEl = $('insights-heatmap-months'), wdEl = $('insights-heatmap-weekdays');
+  hideHeatmapTip();
+  if (!heatGrid || !heat.length) return;
+
+  const focusDate = document.activeElement?.closest?.('#insights-heatmap-grid')
+    ? document.activeElement.dataset.date || null
+    : null;
+  const vals = heat.map(d => (heatmapMetric === 'tokens' ? d.tokens : d.sessions) || 0);
+  const maxVal = Math.max(1, ...vals);
+
+  let activeDays = 0, streak = 0, peakVal = -1;
+  for (let i = 0; i < heat.length; i++) {
+    if ((heat[i]?.sessions || 0) > 0) activeDays++;
+    if (vals[i] > peakVal) peakVal = vals[i];
+  }
+  for (let i = heat.length - 1; i >= 0; i--) {
+    if ((heat[i]?.sessions || 0) > 0) streak++;
+    else if (i === heat.length - 1) continue;
+    else break;
+  }
+  const peakText = peakVal > 0
+    ? (heatmapMetric === 'tokens' ? `${compact(peakVal)} tok` : t('insightsHeatmapPeakSessions', { n: smallCount(peakVal) }))
+    : '—';
+  text('insights-heatmap-meta', t('insightsHeatmapSummary', {
+    days: smallCount(activeDays),
+    streak: smallCount(streak),
+    peak: peakText,
+  }));
+  text('insights-heatmap-range', heat[0]?.date && heat.at(-1)?.date ? `${heat[0].date.slice(5)} – ${heat.at(-1).date.slice(5)}` : '');
+
+  if (wdEl) {
+    wdEl.replaceChildren(...t('insightsWeekdays').split(',').slice(0, 7).map(lbl => {
+      const sp = document.createElement('span');
+      sp.textContent = lbl;
+      return sp;
+    }));
+  }
+
+  const aligned = isMonotonicHeatmap(heat);
+  const firstDow = aligned ? (parseIsoDay(heat[0].date).getUTCDay() + 6) % 7 : 0;
+  const colsCount = Math.ceil((firstDow + heat.length) / 7);
+  heatGrid.style.setProperty('--hm-cols', String(colsCount));
+
+  if (monthsEl) {
+    monthsEl.style.gridTemplateColumns = `repeat(${colsCount}, minmax(0, 1fr))`;
+    const labels = [];
+    if (aligned) {
+      const zhLang = language.language === 'zh-CN' || language.language === 'zh-TW';
+      let lastMonth = -1, lastCol = -3;
+      for (let c = 0; c < colsCount; c++) {
+        let colMonth = -1;
+        for (let r = 0; r < 7; r++) {
+          const item = heat[c * 7 + r - firstDow];
+          const parsed = parseIsoDay(item?.date);
+          if (!parsed) continue;
+          const m = parsed.getUTCMonth() + 1;
+          if (parsed.getUTCDate() === 1) { colMonth = m; break; }
+          if (colMonth === -1) colMonth = m;
+        }
+        if (colMonth !== -1 && colMonth !== lastMonth) {
+          lastMonth = colMonth;
+          if (c - lastCol >= 2 && (colsCount < 4 || c <= colsCount - 2)) {
+            const sp = document.createElement('span');
+            sp.textContent = zhLang ? `${colMonth}月` : MONTHS_EN[colMonth - 1];
+            sp.style.gridColumn = String(c + 1);
+            sp.style.gridRow = '1';
+            labels.push(sp);
+            lastCol = c;
+          }
+        }
+      }
+    }
+    monthsEl.replaceChildren(...labels);
+  }
+
+  const cols = [];
+  for (let c = 0; c < colsCount; c++) {
+    const col = document.createElement('div');
+    col.className = 'heatmap-col';
+    for (let r = 0; r < 7; r++) {
+      const idx = c * 7 + r - firstDow;
+      const d = idx >= 0 && idx < heat.length ? heat[idx] : null;
+      if (!d) {
+        const pad = document.createElement('span');
+        pad.className = 'heatmap-cell is-pad';
+        pad.setAttribute('aria-hidden', 'true');
+        col.append(pad);
+        continue;
+      }
+      const val = (heatmapMetric === 'tokens' ? d.tokens : d.sessions) || 0;
+      const lvl = val <= 0 ? 0 : Math.min(4, Math.ceil((val / maxVal) * 4));
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'heatmap-cell';
+      cell.dataset.date = d.date;
+      cell.dataset.level = String(lvl);
+      const label = t('insightsHeatmapTip', {
+        date: d.date,
+        sessions: smallCount(d.sessions || 0),
+        tokens: compact(d.tokens || 0),
+      });
+      setAttr(cell, 'aria-label', label);
+      setAttr(cell, 'aria-pressed', String(selectedHeatmapDate === d.date));
+      cell.addEventListener('pointerenter', () => showHeatmapTip(cell, d));
+      cell.addEventListener('pointerleave', hideHeatmapTip);
+      cell.addEventListener('focus', () => showHeatmapTip(cell, d));
+      cell.addEventListener('blur', hideHeatmapTip);
+      cell.addEventListener('click', () => toggleHeatmapDate(d.date));
+      col.append(cell);
+    }
+    cols.push(col);
+  }
+  heatGrid.replaceChildren(...cols);
+  if (focusDate) {
+    for (const btn of heatGrid.querySelectorAll('button[data-date]')) {
+      if (btn.dataset.date === focusDate) {
+        btn.focus({ preventScroll: true });
+        break;
+      }
+    }
+  }
 }
 
 function renderInsightsView() {
@@ -912,31 +1282,8 @@ function renderInsightsView() {
   }
 
   // Activity heatmap
-  setAttr($('heatmap-metric-sessions'), 'aria-pressed', String(heatmapMetric === 'sessions'));
-  setAttr($('heatmap-metric-tokens'), 'aria-pressed', String(heatmapMetric === 'tokens'));
-  const heatGrid = $('insights-heatmap-grid');
   const heat = Array.isArray(insightsData.heatmap) ? insightsData.heatmap : [];
-  if (heatGrid && heat.length) {
-    const vals = heat.map(d => heatmapMetric === 'tokens' ? d.tokens : d.sessions);
-    const maxVal = Math.max(1, ...vals);
-    const cols = [];
-    for (let c = 0; c < Math.ceil(heat.length / 7); c++) {
-      const col = document.createElement('div'); col.className = 'heatmap-col';
-      for (let r = 0; r < 7; r++) {
-        const d = heat[c * 7 + r];
-        const cell = document.createElement('div'); cell.className = 'heatmap-cell';
-        if (d) {
-          const val = heatmapMetric === 'tokens' ? d.tokens : d.sessions;
-          const lvl = val <= 0 ? 0 : Math.min(4, Math.ceil((val / maxVal) * 4));
-          cell.dataset.level = String(lvl);
-          setAttr(cell, 'title', `${d.date} · ${d.sessions} · ${compact(d.tokens)} tok`);
-        }
-        col.append(cell);
-      }
-      cols.push(col);
-    }
-    heatGrid.replaceChildren(...cols);
-  }
+  renderInsightsHeatmap(heat);
 
   // Token composition across sessions
   const ic = insightsData.composition || {};
@@ -969,21 +1316,61 @@ function renderInsightsView() {
 
   // 4 distribution cards
   const dist = insightsData.distributions || {};
-  renderDistList('insights-dist-projects', dist.projects, p => `${p.sessions} · ${compact(p.tokens)}`);
-  renderDistList('insights-dist-skills', dist.skills, s => `${s.count} (${s.sessions})`);
-  renderDistList('insights-dist-tools', dist.tools, item => count(item.count));
-  renderDistList('insights-dist-commands', dist.commands, item => count(item.count));
+  const projects = Array.isArray(dist.projects) ? dist.projects : [];
+  const skills = Array.isArray(dist.skills) ? dist.skills : [];
+  const tools = Array.isArray(dist.tools) ? dist.tools : [];
+  const commands = Array.isArray(dist.commands) ? dist.commands : [];
+  const projTokens = projects.reduce((n, p) => n + (p.tokens || 0), 0);
+  const skillRuns = skills.reduce((n, s) => n + (s.count || 0), 0);
+  const toolCallsSum = tools.reduce((n, item) => n + (item.count || 0), 0);
+  const toolCalls = Number.isFinite(k.totalToolCalls) && k.totalToolCalls >= toolCallsSum ? k.totalToolCalls : toolCallsSum;
+  const cmdRuns = commands.reduce((n, item) => n + (item.count || 0), 0);
+  text('insights-dist-projects-sub', t('insightsProjectsSubtotal', { n: count(projects.length), tokens: compact(projTokens) }));
+  text('insights-dist-skills-sub', t('insightsSkillsSubtotal', { n: count(skills.length), runs: count(skillRuns) }));
+  text('insights-dist-tools-sub', t('insightsToolsSubtotal', { n: count(tools.length), calls: count(toolCalls) }));
+  text('insights-dist-commands-sub', t('insightsCommandsSubtotal', { n: count(commands.length), runs: count(cmdRuns) }));
+  renderDistList('insights-dist-projects', projects, {
+    tone: 'projects',
+    metric: p => p.tokens || p.sessions || 0,
+    formatVal: p => `${t('insightsUnitSessions', { n: smallCount(p.sessions) })} · ${compact(p.tokens)} toks`,
+  });
+  renderDistList('insights-dist-skills', skills, {
+    tone: 'skills',
+    metric: s => s.count || 0,
+    formatVal: s => `${t('insightsUnitRuns', { n: smallCount(s.count) })} · ${t('insightsUnitSessions', { n: smallCount(s.sessions) })}`,
+  });
+  renderDistList('insights-dist-tools', tools, {
+    tone: 'tools',
+    metric: item => item.count || 0,
+    formatVal: item => t('insightsUnitCalls', { n: count(item.count) }),
+  });
+  renderDistList('insights-dist-commands', commands, {
+    tone: 'commands',
+    metric: item => item.count || 0,
+    formatVal: item => t('insightsUnitRuns', { n: count(item.count) }),
+  });
 
   // Sessions list
-  const sessions = Array.isArray(insightsData.sessions) ? insightsData.sessions : [];
-  text('insights-sessions-title', t('insightsSessionsTitle', { n: count(insightsData.totalMatchingSessions ?? sessions.length) }));
+  const allSessions = Array.isArray(insightsData.sessions) ? insightsData.sessions : [];
+  const sessions = selectedHeatmapDate
+    ? allSessions.filter(s => Array.isArray(s.activeDates) && s.activeDates.includes(selectedHeatmapDate))
+    : allSessions;
+  const dateFilterBtn = $('insights-date-filter');
+  if (dateFilterBtn) {
+    dateFilterBtn.hidden = !selectedHeatmapDate;
+    dateFilterBtn.textContent = selectedHeatmapDate ? t('insightsHeatmapClearDate', { date: selectedHeatmapDate }) : '';
+  }
+  text('insights-sessions-title', t('insightsSessionsTitle', { n: count(selectedHeatmapDate ? sessions.length : (insightsData.totalMatchingSessions ?? sessions.length)) }));
   if (insightsData.cacheInfo) {
     text('insights-cache-meta', t('insightsCacheMeta', { total: insightsData.cacheInfo.totalScanned, ms: insightsData.cacheInfo.scanMs }));
   }
   const sessList = $('insights-sessions-list');
   if (sessList) {
     if (!sessions.length) {
-      sessList.replaceChildren(Object.assign(document.createElement('div'), { className: 'insights-status', textContent: t('insightsEmpty') }));
+      sessList.replaceChildren(Object.assign(document.createElement('div'), {
+        className: 'insights-status',
+        textContent: selectedHeatmapDate ? t('insightsEmptyDate', { date: selectedHeatmapDate }) : t('insightsEmpty'),
+      }));
     } else {
       sessList.replaceChildren(...sessions.slice(0, 100).map(s => {
         const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'session-row';
@@ -1072,6 +1459,7 @@ function render() {
   text('week-quota-title',t(isArgon?'argonWeek':'week'));
   $('week-details').setAttribute('aria-label',t(isArgon?'argonWeek':'week'));
   renderQuota('5h','five',now); renderQuota('weekly','week',now);
+  renderQuotaStrip(now);
   const sibWrap = $('panel-quota-siblings');
   if (sibWrap) {
     const siblings = group ? groups.filter(g => g.id !== group.id) : groups;
@@ -1134,8 +1522,10 @@ function render() {
     }
   }
   const isFiniteRate=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
-  const legacyRate=speed?.latestRateStatus==='legacy',unreliableRate=speed?.latestRateStatus==='unreliable';
-  const latestVal=!speed||legacyRate?null:!unreliableRate&&isFiniteRate(speed.latestTps)?speed.latestTps:isFiniteRate(speed.tps)?speed.tps:null;
+  const rateStatus=speed?.latestRateStatus;
+  const legacyRate=rateStatus==='legacy',shortRate=rateStatus==='short',bufferedRate=rateStatus==='buffered',unreliableRate=rateStatus==='unreliable';
+  const statusRate=legacyRate||shortRate||bufferedRate||unreliableRate;
+  const latestVal=!speed||legacyRate?null:!statusRate&&isFiniteRate(speed.latestTps)?speed.latestTps:isFiniteRate(speed.tps)?speed.tps:null;
   const trailSamples=speed&&!legacyRate?(Array.isArray(speed.recentTps)&&speed.recentTps.length?speed.recentTps.filter(v=>isFiniteRate(v)&&v>0):latestVal>0?[Math.round(latestVal*10)/10]:[]):[];
   renderPanelTrail(trailSamples);
   $('strip-tps').textContent = rate(speed?.tps);
@@ -1146,11 +1536,25 @@ function render() {
   text('e2e-tps', legacyRate?t('ratePending'):rate(speed?.e2eTps));
   hidden('panel-e2e-unit',Boolean(legacyRate));
   setTip($('e2e-speed-cell'), t('e2eBasis'));
-  $('latest-tps').textContent = unreliableRate?t('timingUnreliable'):legacyRate?t('ratePending'):rate(latestVal);
-  if(unreliableRate||legacyRate)$('latest-tps').setAttribute('data-status','true');else $('latest-tps').removeAttribute('data-status');
-  hidden('panel-latest-unit',Boolean(unreliableRate||legacyRate));
-  setTip($('speed-hero-row'), t('latestSpeedTip'));
-  const peakCandidate=legacyRate||!speed?-1:isFiniteRate(speed.peakTps)?speed.peakTps:Math.max(isFiniteRate(speed.tps)?speed.tps:-1,!unreliableRate&&isFiniteRate(speed.latestTps)?speed.latestTps:-1);
+  $('latest-tps').textContent = shortRate?t('timingShort'):bufferedRate?t('timingBuffered'):unreliableRate?t('timingUnreliable'):legacyRate?t('ratePending'):rate(latestVal);
+  setAttr($('latest-tps'),'data-status',statusRate?'true':null);
+  setAttr($('latest-tps'),'data-rate-state',statusRate?rateStatus:null);
+  hidden('panel-latest-unit',Boolean(statusRate));
+  const durVal=speed?.latestDurationSeconds;
+  const durStr=isFiniteRate(durVal)?(durVal>=10?`${durVal.toFixed(1)}s`:`${durVal.toFixed(2)}s`):'';
+  const tokStr=typeof speed?.latestOutputTokens==='number'&&Number.isSafeInteger(speed.latestOutputTokens)?count(speed.latestOutputTokens):'';
+  const hasPrevRef=Boolean(speed?.prevQualifiedSameModel&&isFiniteRate(speed?.prevQualifiedTps));
+  const subText=shortRate&&tokStr&&durStr?(hasPrevRef?t('shortSublineRef',{tokens:tokStr,dur:durStr,prev:rate(speed.prevQualifiedTps)}):t('shortSubline',{tokens:tokStr,dur:durStr})):bufferedRate&&tokStr&&durStr?(isFiniteRate(speed?.latestE2eTps)?t('bufferedSublineE2e',{tokens:tokStr,dur:durStr,e2e:rate(speed.latestE2eTps)}):t('shortSubline',{tokens:tokStr,dur:durStr})):'';
+  text('latest-sub',subText);
+  hidden('latest-sub',!subText);
+  let heroTip=t('latestSpeedTip');
+  if((shortRate||bufferedRate)&&tokStr&&durStr){
+    heroTip=t(shortRate?'shortSpeedTip':'bufferedSpeedTip',{tokens:tokStr,dur:durStr});
+    if(isFiniteRate(speed?.latestE2eTps))heroTip+=t('latestTipE2e',{e2e:rate(speed.latestE2eTps)});
+    if(hasPrevRef)heroTip+=t('latestTipPrev',{prev:rate(speed.prevQualifiedTps)});
+  }
+  setTip($('speed-hero-row'), heroTip);
+  const peakCandidate=legacyRate||!speed?-1:isFiniteRate(speed.peakTps)?speed.peakTps:Math.max(isFiniteRate(speed.tps)?speed.tps:-1,!statusRate&&isFiniteRate(speed.latestTps)?speed.latestTps:-1);
   text('peak-tps',peakCandidate>=0?rate(peakCandidate):'—');
   setTip($('peak-speed-cell'), t('peakBasis'));
   $('request-count').textContent = t('sampleCount',{n:speed?.measuredRequests??0});
@@ -1181,16 +1585,22 @@ function render() {
   cacheAttr('aria-label',currentOnly?t('taskCurrentOnly'):null);
   cacheAttr('title',currentOnly?t('taskCurrentOnly'):null);
   const context=speed?.context,hasCapacity=typeof context?.usedFraction==='number';
+  const rawContextPct=hasCapacity?Math.round(context.usedFraction*100):null;
+  const contextPct=hasCapacity?Math.min(100,rawContextPct):null;
+  const contextOverWindow=hasCapacity&&context.usedFraction>1;
+  const overWindowRaw=contextOverWindow?(rawContextPct>100?String(rawContextPct):(context.usedFraction*100).toFixed(1)):'';
+  const overWindowTip=contextOverWindow?t('contextOverWindow',{raw:overWindowRaw}):'';
   const transcript=speed?.transcriptStats;
   const roundCount=Number.isSafeInteger(speed?.rounds)&&speed.rounds>0?speed.rounds:null;
   const stepCount=Number.isSafeInteger(speed?.steps)&&speed.steps>=0?speed.steps:null;
   const roundSuffix=roundCount!==null?` · ${t('contextTurnsCount',{n:smallCount(roundCount)})}`:'';
   const compactions=transcript&&['ready','partial'].includes(transcript.status)&&typeof transcript.compactionMarkers==='number'?transcript.compactionMarkers:null;
   const compSuffix=compactions!==null&&compactions>0?` · ${t('contextCompactionSummary',{n:compactions})}`:'';
-  $('strip-context').textContent=hasCapacity?`${Math.round(context.usedFraction*100)}%`:'—';
+  $('strip-context').textContent=hasCapacity?`${contextPct}%`:'—';
   $('strip-context-size').textContent=context?`${compact(context.usedTokens)} / ${context.maxTokens===null?'—':compact(context.maxTokens)}`:'—';
-  $('context-tab').title=(context?t('contextTokens',{used:count(context.usedTokens),max:context.maxTokens===null?'—':count(context.maxTokens)}):t('contextUnknown'))+roundSuffix+compSuffix;
-  $('context-summary').textContent=hasCapacity?t('contextUsed',{used:Math.round(context.usedFraction*100),remaining:Math.round(context.remainingFraction*100)}):(speed?.archivedFallback&&Number.isSafeInteger(context?.usedTokens)?`${compact(context.usedTokens)} ${tokUnit(context.usedTokens)}`:t('contextUnknown'));
+  $('context-tab').title=(context?t('contextTokens',{used:count(context.usedTokens),max:context.maxTokens===null?'—':count(context.maxTokens)}):t('contextUnknown'))+(overWindowTip?` · ${overWindowTip}`:'')+roundSuffix+compSuffix;
+  $('context-summary').textContent=hasCapacity?t('contextUsed',{used:contextPct,remaining:Math.round(context.remainingFraction*100)}):(speed?.archivedFallback&&Number.isSafeInteger(context?.usedTokens)?`${compact(context.usedTokens)} ${tokUnit(context.usedTokens)}`:t('contextUnknown'));
+  setTip($('context-summary'),overWindowTip||null);
   $('context-tokens').textContent=context?t('contextTokens',{used:compact(context.usedTokens),max:context.maxTokens===null?'—':compact(context.maxTokens)}):'—';
   $('context-model').textContent=context?.model||speed?.model||'—';
   hidden('context-audit-toggle',!(activeConversationId()||speed?.conversationId));
@@ -1219,7 +1629,7 @@ function render() {
     hidden('context-compaction-pill',!(compactions!==null&&compactions>0));
     if(compactions!==null&&compactions>0){
       text('context-compaction-pill',t('contextCompactionCount',{n:compactions}));
-      compactionPill.title=t('contextCompactionsTitle',{n:compactions});
+      compactionPill.title=`${t('contextCompactionsTitle',{n:compactions})}\n${t('compactionMetricsBasis')}`;
     }
   }
   const mkEl=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;};
@@ -1322,7 +1732,7 @@ function render() {
   text('strip-cache',percent(cache?.hitRate));text('cache-rate',percent(cache?.hitRate));
   const tokens=usage?.tokens || cache;
   const hasTotal=tokens?.measuredRequests&&Number.isSafeInteger(tokens.totalTokens)&&tokens.totalTokens>=0;
-  text('strip-cache-total',hasTotal?`${compact(tokens.totalTokens)} tok`:'— tok');
+  text('strip-cache-total-num',hasTotal?compact(tokens.totalTokens):'—');
   text('cache-coverage',hasTotal?(tokens.totalTokens>=1e9?compactDetail(tokens.totalTokens):count(tokens.totalTokens)):'—');
   text('cache-coverage-unit',hasTotal?tokUnit(tokens.totalTokens):'toks');
   setTip($('cache-coverage')?.parentElement,hasTotal&&tokens.totalTokens>=1e9?`${count(tokens.totalTokens)} ${tokUnit(tokens.totalTokens)}`:null);
@@ -1360,7 +1770,7 @@ function render() {
     setTip($('session-cost-row'),t('estimatedCostTitle'));
   }
   hidden('task-own-row',!taskUsage);hidden('task-subagents-row',!taskUsage);
-  text('task-subagents-label',taskUsage?t('taskSubagents',{n:count(taskUsage.subagents)}):'');
+  text('task-subagents-label',taskUsage?(taskUsage.isSwarm?t('taskSwarm',{n:count(taskUsage.subagents)}):t('taskSubagents',{n:count(taskUsage.subagents)})):'');
   for(const [field,id,rowId]of[['ownTokens','task-own','task-own-row'],['subagentTokens','task-subagents','task-subagents-row']]){
     const value=taskUsage?.[field],known=field!=='subagentTokens'||taskUsage?.loadedSubagents>0;
     const ok=known&&Number.isSafeInteger(value)&&value>=0;
@@ -1369,6 +1779,68 @@ function render() {
   }
   const taskNote=taskUsage?.state==='loading'?t('taskLoading'):taskUsage?.state==='partial'?t(taskUsage.loadedSubagents===0?'taskCurrentOnly':'taskPartial'):'';
   text('cache-note',taskNote);hidden('cache-note',!taskNote);
+  const orchPhaseEl=$('orchestrator-breakdown');
+  const orch=speed?.orchestrator?.detected?speed.orchestrator:null;
+  if(orchPhaseEl){
+    hidden('orchestrator-breakdown',!orch);
+    if(orch){
+      const phaseSig=JSON.stringify([language.language,orch]);
+      if(orchPhaseEl.dataset.signature!==phaseSig){
+        orchPhaseEl.dataset.signature=phaseSig;
+        text('orch-phase-label',t('orchCardTitle'));
+        text('orch-phase-meta',orch.switched?t('orchSwitchCount',{n:count(orch.phaseSwitchCount||1)}):t('orchReadOnlyTag'));
+        const phaseNodes=[];
+        const sec=mkEl('div','breakdown-section');
+        sec.append(mkEl('div','breakdown-head',t('orchScopeHint')));
+        if(orch.planner){
+          const p=orch.planner,pName=`${t('orchRolePlanner')} · ${p.model||orch.configuredPlanner||'—'}`;
+          const pRow=mkRow(pName,`${compact(p.totalTokens)} · ${t('reqCountShort',{n:smallCount(p.requests)})} · ${percent(p.hitRate)}`);
+          setTip(pRow,pName);sec.append(pRow);
+        }
+        if(orch.executor){
+          const e=orch.executor,eName=`${t('orchRoleExecutor')} · ${e.model||orch.configuredExecutor||'—'}`;
+          const eRow=mkRow(eName,`${compact(e.totalTokens)} · ${t('reqCountShort',{n:smallCount(e.requests)})} · ${percent(e.hitRate)}`);
+          setTip(eRow,eName);sec.append(eRow);
+        }
+        if(!orch.switched){
+          sec.append(mkRow(t('orchNoSwitchYet'),''));
+          if(orch.configuredPlanner&&orch.configuredExecutor){
+            const pairText=t('orchConfiguredPair',{planner:orch.configuredPlanner,executor:orch.configuredExecutor});
+            const pairRow=mkRow(pairText,'');
+            setTip(pairRow,pairText);sec.append(pairRow);
+          }
+        }
+        if(orch.coldStartSwitches>0){
+          const csRow=mkRow(t('orchColdStartLabel'),t('countTimes',{n:smallCount(orch.coldStartSwitches)}),false,false);
+          setTip(csRow,t('orchColdStartTip'));
+          sec.append(csRow);
+        }
+        phaseNodes.push(sec);
+        $('orch-phase-body').replaceChildren(...phaseNodes);
+      }
+    }else if(orchPhaseEl.dataset.signature){
+      delete orchPhaseEl.dataset.signature;$('orch-phase-body').replaceChildren();
+    }
+  }
+  const routePill=$('strip-route-pill');
+  if(routePill){
+    const routeMeta=speed?.sessionMeta||null;
+    let routeLabel='',routeTip='';
+    if(orch){
+      routeLabel=orch.switched?t('routeOrchSwitched',{n:smallCount(orch.phaseSwitchCount||1)}):t('routeOrchActive');
+      routeTip=`${t('orchCardTitle')}${orch.switched?` · ${t('orchSwitchCount',{n:count(orch.phaseSwitchCount||1)})}`:` · ${t('orchReadOnlyTag')}`}`;
+    }else if(taskUsage?.isSwarm){
+      routeLabel=t('routeSwarm',{n:count(taskUsage.subagents)});
+      routeTip=taskUsage.swarmTitle?`Swarm · ${taskUsage.swarmTitle}`:t('taskSwarm',{n:count(taskUsage.subagents)});
+    }else if(routeMeta?.isSubagent||routeMeta?.isSidecar){
+      const roleKey=routeMeta.isSidecar?'roleSidecar':routeMeta.agentRole==='monitor'?'roleMonitor':routeMeta.agentRole==='coordinator'?'roleCoordinator':'roleWorker';
+      routeLabel=t(roleKey);
+      routeTip=`${t('sessionRoleLabel')}: ${routeLabel}`;
+    }
+    hidden('strip-route-pill',!routeLabel);
+    if(routeLabel){text('strip-route-pill',routeLabel);setTip(routePill,routeTip);}
+    else setTip(routePill,null);
+  }
   const orchEl=$('orchestration-breakdown');
   if(orchEl){
     const sessionModels=Array.isArray(speed?.modelBreakdown)?speed.modelBreakdown:[];
@@ -1379,10 +1851,11 @@ function render() {
     const showOrch=Boolean(taskUsage||sessionModels.length>1||surges>0||roleMeta?.isSubagent||roleMeta?.isSidecar);
     hidden('orchestration-breakdown',!showOrch);
     if(showOrch){
-      const orchSig=JSON.stringify([language.language,models,taskUsage?.poolBreakdown||null,taskUsage?.roleBreakdown||null,taskUsage?.agents||null,surges,speed?.cacheMissSurgeTokens||0,roleMeta]);
+      const orchSig=JSON.stringify([language.language,models,taskUsage?.poolBreakdown||null,taskUsage?.roleBreakdown||null,taskUsage?.agents||null,taskUsage?.isSwarm||false,taskUsage?.swarmTitle||null,surges,speed?.cacheMissSurgeTokens||0,roleMeta,swarmRosterFilter]);
       if(orchEl.dataset.signature!==orchSig){
         orchEl.dataset.signature=orchSig;
-        text('orch-summary-label',t('multiAgentDetails'));
+        const summaryLabel=taskUsage?.isSwarm?(taskUsage.swarmTitle?`Swarm · ${taskUsage.swarmTitle}`:t('swarmDetails')):t('multiAgentDetails');
+        text('orch-summary-label',summaryLabel);
         const poolMap=taskUsage?.poolBreakdown||(()=>{
           const out={gemini:{totalTokens:0,requests:0},'3p':{totalTokens:0,requests:0},local:{totalTokens:0,requests:0},other:{totalTokens:0,requests:0}};
           for(const m of models){const b=out[m.pool]||out.other;b.totalTokens+=m.totalTokens||0;b.requests+=m.requests||0;}
@@ -1393,6 +1866,10 @@ function render() {
         const poolTotal=activePools.reduce((n,[,v])=>n+(v.totalTokens||0),0);
         text('orch-summary-meta',activePools.length?activePools.map(([p,v])=>`${poolNames[p]||p} ${compact(v.totalTokens)}`).slice(0,2).join(' · '):`${models.length}`);
         const nodes=[];
+        if(taskUsage?.isSwarm){
+          const scopeHead=mkEl('div','breakdown-head',t('swarmScopeHint'));
+          nodes.push(scopeHead);
+        }
         if(activePools.length){
           const sec=mkEl('div','breakdown-section');
           sec.append(mkEl('div','breakdown-head',t('poolRollup')));
@@ -1420,17 +1897,65 @@ function render() {
         if(models.length){
           const sec=mkEl('div','breakdown-section');
           for(const m of models.slice(0,6)){
-            const thinkNote=m.thinkingTokens>0?` · 🧠${compact(m.thinkingTokens)}`:'';
-            const val=`${compact(m.totalTokens)} · ${m.requests}×${thinkNote}`;
-            sec.append(mkRow(`${m.model} [${poolNames[m.pool]||m.pool}]`,val,m.cacheMissSurges>0,false));
+            const thinkPart=m.thinkingTokens>0?` · ${compact(m.thinkingTokens)}`:'';
+            const val=`${compact(m.totalTokens)} · ${t('reqCountShort',{n:smallCount(m.requests)})}${thinkPart}`;
+            const mRow=mkRow(m.model,val,false,false);
+            setTip(mRow,`${m.model} · ${poolNames[m.pool]||m.pool}${m.thinkingTokens>0?` · ${t('breakdownThinking')} ${compact(m.thinkingTokens)}`:''}`);
+            sec.append(mRow);
           }
-          if(surges>0)sec.append(mkRow('⚠',t('cacheMissSurge',{n:surges,tokens:compact(speed?.cacheMissSurgeTokens||0)}),true,false));
+          if(surges>0){
+            const sRow=mkRow(t('cacheMissSurgeLabel'),`${t('reqCountShort',{n:smallCount(surges)})} · ${compact(speed?.cacheMissSurgeTokens||0)}`,false,false);
+            setTip(sRow,t('cacheMissSurgeTip'));
+            sec.append(sRow);
+          }
           nodes.push(sec);
         }
         const agList=Array.isArray(taskUsage?.agents)?taskUsage.agents:[];
-        if(agList.length>1){
+        if(agList.length>1||(taskUsage?.isSwarm&&agList.length>0)){
           const sec=mkEl('div','breakdown-section');
-          for(const a of agList.slice(0,6))sec.append(mkRow(`${a.label} · ${a.model}`,`${compact(a.tokens)} (${a.requests}×)`));
+          const activeAgents=agList.filter(a=>!a.killed),endedAgents=agList.filter(a=>a.killed);
+          const hasBoth=activeAgents.length>0&&endedAgents.length>0;
+          const effFilter=hasBoth?swarmRosterFilter:(activeAgents.length>0?'active':'ended');
+          const visibleAgents=effFilter==='active'?activeAgents:effFilter==='ended'?endedAgents:[...activeAgents,...endedAgents];
+          if(taskUsage?.isSwarm||hasBoth){
+            const head=mkEl('div','roster-head');
+            head.append(taskUsage?.isSwarm?mkEl('div','breakdown-head',t('swarmRoster')):mkEl('span'));
+            if(hasBoth){
+              const bar=mkEl('div','segmented-options roster-filter');bar.id='orch-roster-filter';bar.setAttribute('role','group');
+              for(const [k,labelKey,n] of [['active','swarmStatusActive',activeAgents.length],['ended','swarmStatusKilled',endedAgents.length],['all','swarmStatusAll',agList.length]]){
+                const b=mkEl('button','segmented-button',`${t(labelKey)} ${smallCount(n)}`);
+                b.type='button';b.dataset.rosterFilter=k;b.setAttribute('aria-pressed',String(effFilter===k));
+                b.addEventListener('click',()=>{swarmRosterFilter=k;render();});
+                bar.append(b);
+              }
+              head.append(bar);
+            }
+            sec.append(head);
+          }
+          const maxActive=Math.max(1,...activeAgents.map(a=>a.tokens||0));
+          const list=mkEl('div','roster-list');
+          const shortName=l=>String(l||'').replace(/^(?:Worker|Monitor|Sidecar)\s*\((.+)\)$/,'$1');
+          for(const a of visibleAgents){
+            const item=mkEl('div',a.killed?'roster-item is-ended':'roster-item');
+            const wsTag=a.workspaceMode&&a.workspaceMode!=='inherit'?` [${a.workspaceMode}]`:'';
+            const killedTag=a.killed?` · ${t('swarmStatusKilled')}`:'';
+            const tokText=compact(a.tokens),reqText=t('reqCountShort',{n:smallCount(a.requests)});
+            setTip(item,`${a.label}${wsTag}${killedTag} · ${a.model} — ${tokText} · ${reqText}`);
+            const top=mkEl('div','roster-top'),left=mkEl('span','roster-left');
+            left.append(mkEl('span','roster-dot'),mkEl('span','roster-name',shortName(a.label)));
+            if(a.workspaceMode&&a.workspaceMode!=='inherit')left.append(mkEl('span','roster-ws',a.workspaceMode));
+            top.append(left,mkEl('span','roster-tok',tokText));
+            const sub=mkEl('div','roster-sub');
+            sub.append(mkEl('span','roster-model',a.model),mkEl('span','roster-req',reqText));
+            item.append(top,sub);
+            if(!a.killed&&(a.tokens||0)>0){
+              const bar=mkEl('div','roster-bar'),fill=mkEl('i');
+              fill.style.width=`${Math.max(4,Math.round((a.tokens/maxActive)*100))}%`;
+              bar.append(fill);item.append(bar);
+            }
+            list.append(item);
+          }
+          sec.append(list);
           nodes.push(sec);
         }
         $('orch-body').replaceChildren(...nodes);
@@ -1550,6 +2075,7 @@ function updateCountdowns() {
       lastExpiredRefresh = now; setTimeout(() => refresh(true),0);
     }
   }
+  renderQuotaStrip(now);
 }
 
 function refreshBusy(busy){
@@ -1606,7 +2132,7 @@ function refresh(force = false, {usageSync=false}={}) {
     const preservedUsage = reqScopeEpoch !== scopeRequestEpoch && snapshot?.usage ? snapshot.usage : value.usage;
     snapshot = preservedUsage === value.usage ? value : {...value, usage: preservedUsage};
     if(Object.hasOwn(value,'theme'))themeController.setHostTheme(value.theme);
-    if(value.preferences){didSyncUsageScope=true;syncUsageGuide(value.preferences);preferences.sync(value.preferences);speedStyle.sync(value.preferences);hostUiLocalization.sync(value.preferences);usageScope.sync(value.preferences);contextLimit.sync(value.preferences);}
+    if(value.preferences){didSyncUsageScope=true;syncUsageGuide(value.preferences);preferences.sync(value.preferences);speedStyle.sync(value.preferences);hostUiLocalization.sync(value.preferences);barColorsPref.sync(value.preferences);themeModePref.sync(value.preferences);usageScope.sync(value.preferences);contextLimit.sync(value.preferences);}
     serverOffset = Date.parse(value.serverTime) - Date.now();
     if (!Number.isFinite(serverOffset)) serverOffset = 0;
     render();
@@ -1643,6 +2169,13 @@ for(const btn of document.querySelectorAll('[data-audit-tab]')){
 for(const btn of document.querySelectorAll('[data-step-filter]')){
   btn.addEventListener('click',()=>{auditStepFilter=btn.dataset.stepFilter;renderAuditSection();});
 }
+$('strip-route-pill')?.addEventListener('click',event=>{
+  showPanelView('session');
+  showCard('cache',event.detail>0);
+  const orchPhase=$('orchestrator-breakdown'),orch=$('orchestration-breakdown');
+  if(orchPhase&&!orchPhase.hidden)orchPhase.open=true;
+  if(orch&&!orch.hidden)orch.open=true;
+});
 $('strip-session-reset')?.addEventListener('click',()=>{
   setInspectedConversation(null);
   void refresh(false);
@@ -1657,6 +2190,11 @@ $('insights-search')?.addEventListener('input',()=>{
 });
 $('heatmap-metric-sessions')?.addEventListener('click',()=>{heatmapMetric='sessions';renderInsightsView();});
 $('heatmap-metric-tokens')?.addEventListener('click',()=>{heatmapMetric='tokens';renderInsightsView();});
+$('insights-date-filter')?.addEventListener('click',()=>{toggleHeatmapDate(null);});
+$('insights-view')?.addEventListener('scroll',()=>{const cur=$('insights-view')?.scrollTop??0;if(Math.abs(cur-heatmapTipScrollTop)>=2)hideHeatmapTip();},{passive:true});
+const syncHeatmapTipPosition=()=>{if(activeHeatmapTipCell)positionHeatmapTip(activeHeatmapTipCell);};
+window.addEventListener('resize',syncHeatmapTipPosition);
+if(typeof ResizeObserver==='function'&&$('insights-heatmap-grid'))new ResizeObserver(syncHeatmapTipPosition).observe($('insights-heatmap-grid'));
 
 $('quota-group').addEventListener('change', event => { selectedGroup = event.target.value === autoGroupId ? null : event.target.value; render(); });
 $('refresh-button').addEventListener('click', refreshManually);
@@ -1675,7 +2213,6 @@ if($('context-limit-slot')){
 }
 for(const button of document.querySelectorAll('[data-speed-style-choice]'))button.addEventListener('click',()=>void speedStyle.choose(button.dataset.speedStyleChoice));
 $('host-i18n-toggle')?.addEventListener('click',()=>void hostUiLocalization.choose(!hostUiLocalization.enabled));
-for(const button of document.querySelectorAll('[data-host-i18n-choice]'))button.addEventListener('click',()=>void hostUiLocalization.choose(button.dataset.hostI18nChoice==='true'));
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 window.addEventListener('pagehide',()=>{preferences.dispose();speedStyle.dispose();hostUiLocalization.dispose();usageScope.dispose();contextLimit.dispose();contextLimitControl?.dispose();usageDashboard?.dispose();languagePicker.close(false);});
 window.addEventListener('pageshow',event=>{if(event.persisted)preferences=connectPreferences();});

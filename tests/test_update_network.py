@@ -16,10 +16,14 @@ spec.loader.exec_module(worker)
 
 
 class UpdateNetworkTests(unittest.TestCase):
-    def proxies(self, environment, platform='nt'):
+    def proxies(self, environment, platform='nt', sys_platform=None, mac_sysconf=None):
         registry = {'http': 'http://system:8080', 'https': 'http://system:8080'}
+        sysconf = {} if mac_sysconf is None else mac_sysconf
+        target_sys = 'win32' if platform == 'nt' else (sys_platform or 'linux')
         with patch.object(worker.os, 'environ', environment), patch.object(worker.os, 'name', platform), \
-                patch.object(worker.urllib.request, 'getproxies_registry', return_value=registry, create=True) as get_registry:
+                patch.object(worker.sys, 'platform', target_sys), \
+                patch.object(worker.urllib.request, 'getproxies_registry', return_value=registry, create=True) as get_registry, \
+                patch.object(worker.urllib.request, 'getproxies_macosx_sysconf', return_value=sysconf, create=True):
             result = worker.update_proxies()
         return result, get_registry
 
@@ -45,6 +49,14 @@ class UpdateNetworkTests(unittest.TestCase):
         result, registry = self.proxies({'https_proxy': 'http://env:8080', 'no_proxy': 'localhost'}, platform='posix')
         self.assertEqual(result, {'https': 'http://env:8080', 'no': 'localhost'})
         registry.assert_not_called()
+
+    def test_macos_preserves_sysconf_proxy_and_allows_env_override(self):
+        mac = {'http': 'http://127.0.0.1:7890', 'https': 'http://127.0.0.1:7890'}
+        result, registry = self.proxies({'NO_PROXY': 'localhost'}, platform='posix', sys_platform='darwin', mac_sysconf=mac)
+        self.assertEqual(result, {'http': 'http://127.0.0.1:7890', 'https': 'http://127.0.0.1:7890', 'no': 'localhost'})
+        registry.assert_not_called()
+        override, _ = self.proxies({'https_proxy': ''}, platform='posix', sys_platform='darwin', mac_sysconf=mac)
+        self.assertEqual(override, {'http': 'http://127.0.0.1:7890'})
 
     def test_tls_retry_reuses_explicit_proxy_and_keeps_verification(self):
         first, second = Mock(), Mock()
